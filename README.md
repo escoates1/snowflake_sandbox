@@ -1,178 +1,189 @@
 # snowflake_sandbox
 
-A sandbox for practising Snowflake, dbt, and CI/CD pipelines. All Snowflake objects are defined and created via code — never via Snowsight.
+A personal learning sandbox for Snowflake, dbt, and CI/CD.
+
+The guiding rule: **all Snowflake objects are created via code, never via Snowsight.**
+
+- **Terraform** provisions account-level objects — databases, schemas, roles, and warehouses.
+- **dbt** builds the models (staging/marts) on top of those objects.
+- The single permitted Snowsight action is the one-time registration of an RSA public key for key-pair auth (an account operation Terraform can't bootstrap for itself).
+
+Terraform replaces the earlier `scripts/setup_snowflake.py`, which is kept only for reference.
+
+---
 
 ## Project structure
 
 ```text
 .
-├── scripts/
-│   └── setup_snowflake.py   # Creates DEV/PROD databases and schemas from scratch
-├── dbt/                     # dbt project
+├── terraform/                  # Infrastructure as code — Snowflake account objects
+│   ├── modules/                # Reusable building blocks
+│   │   ├── database/           #   a database + its RAW/STAGING/MARTS schemas
+│   │   ├── warehouse/          #   a warehouse with size/auto-suspend settings
+│   │   └── role_grants/        #   roles and grants
+│   └── environments/           # One directory + state file per environment
+│       ├── dev/                #   DEV: versions/variables/providers/main + tfvars
+│       └── prod/               #   PROD: same shape as dev
+├── dbt/                        # dbt project
 │   ├── dbt_project.yml
-│   ├── profiles.yml         # Reads credentials from env vars (safe to commit)
+│   ├── profiles.yml            # Reads credentials from env vars (safe to commit)
 │   ├── packages.yml
-│   └── models/
+│   └── models/                 # Add staging/ and marts/ as you build
+├── scripts/
+│   └── setup_snowflake.py      # Legacy provisioning script — superseded by Terraform
 ├── .github/
 │   └── workflows/
-│       ├── ci.yml           # Runs on every PR: lint + dbt compile against DEV
-│       └── cd.yml           # Runs on merge to main: dbt run + test against PROD
-├── .env.example             # Credential template — copy to .env
+│       ├── ci.yml              # On every PR: ruff lint + dbt compile against DEV
+│       └── cd.yml              # On merge to main: dbt run + dbt test against PROD
+├── .env.example                # Credential template — copy to .env (gitignored)
 └── pyproject.toml
 ```
 
+**State and secrets** are deliberately kept out of git: each environment uses **local
+state** (`terraform.tfstate` in its own directory), and machine-specific values live in a
+gitignored `terraform.tfvars` (a committed `terraform.tfvars.example` shows the shape).
+The private key file (`rsa_key.p8`) is also gitignored and kept outside the repo.
+
 ---
 
-## First-time setup
+## Setup instructions
 
-### 1. Python environment
+### 1. Tools
 
-```bash
-pip install uv
+| Tool | Install (Windows) |
+| --- | --- |
+| Python 3.12 + `uv` | `pip install uv` |
+| Terraform | `winget install Hashicorp.Terraform` (then reopen the shell so it's on `PATH`) |
+| OpenSSL | `winget install ShiningLight.OpenSSL` |
+
+Verify with `terraform -version` and `openssl version`.
+
+### 2. Python environment
+
+```powershell
 uv venv
-# Windows PowerShell:
 .venv\Scripts\activate
-# bash/zsh:
-source .venv/bin/activate
-
 uv sync
 ```
 
-### 2. Configure credentials
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env` with your Snowflake account identifier, username, and password. Your account identifier is in Snowsight under **Admin → Accounts** — copy the value in the format `orgname-accountname`.
-
-### 3. Set up Snowflake environments
-
-This script creates the `DEV` and `PROD` databases, their schemas (`RAW`, `STAGING`, `MARTS`), and the `COMPUTE_WH` warehouse. It is idempotent — safe to re-run.
-
-```bash
-uv run python scripts/setup_snowflake.py
-```
-
-### 4. Set up key-pair authentication
-
-Key-pair auth is required for the CI/CD pipeline (GitHub Actions cannot use passwords). Follow these steps once.
-
-#### Generate an RSA private key
-
-**PowerShell (Windows):**
+### 3. Configure credentials
 
 ```powershell
-# Requires OpenSSL — install via: winget install ShiningLight.OpenSSL
-openssl genrsa 2048 | openssl pkcs8 -topk8 -nocrypt -out rsa_key.p8
+Copy-Item .env.example .env
 ```
 
-**bash (Linux/macOS/WSL):**
+Edit `.env`. Find your account identifier in Snowsight under **Admin → Accounts** — it has
+the form `orgname-accountname`. During first-time setup (before key-pair auth exists) you may
+set `SNOWFLAKE_PASSWORD`; remove it once key-pair auth is working.
 
-```bash
-openssl genrsa 2048 | openssl pkcs8 -topk8 -nocrypt -out rsa_key.p8
-```
+### 4. Set up key-pair auth and the Terraform service user
 
-The file `rsa_key.p8` is gitignored — it must never be committed.
+Terraform authenticates as a dedicated **`TERRAFORM_USER`** service account using an RSA
+key pair — not your personal login.
 
-#### Extract the public key
-
-**PowerShell:**
+**Generate the key pair** (keep `rsa_key.p8` outside the repo, e.g. one directory up):
 
 ```powershell
+openssl genrsa 2048 | openssl pkcs8 -topk8 -nocrypt -out rsa_key.p8
 openssl rsa -in rsa_key.p8 -pubout -out rsa_key.pub
 ```
 
-**bash:**
-
-```bash
-openssl rsa -in rsa_key.p8 -pubout -out rsa_key.pub
-```
-
-#### Register the public key with your Snowflake user
-
-Open `rsa_key.pub` and copy everything between (and excluding) the `-----BEGIN PUBLIC KEY-----` and `-----END PUBLIC KEY-----` lines — this is the bare base64 body. Run the following SQL in a Snowsight worksheet (this is the one permitted use of Snowsight — key registration is a one-time account operation):
+**Register it and create the service user.** Open `rsa_key.pub` and copy the base64 body
+**between** (and excluding) the `-----BEGIN/END PUBLIC KEY-----` lines, then run this once in a
+Snowsight worksheet (the single permitted Snowsight operation):
 
 ```sql
-ALTER USER <your_username> SET RSA_PUBLIC_KEY='<paste bare key body here>';
+USE ROLE ACCOUNTADMIN;
+
+CREATE USER IF NOT EXISTS TERRAFORM_USER
+    TYPE = SERVICE
+    COMMENT = 'Service user for provisioning Snowflake via Terraform'
+    RSA_PUBLIC_KEY = '<paste bare public key body here>';
+
+-- SYSADMIN creates databases/schemas/warehouses; SECURITYADMIN creates roles and grants.
+GRANT ROLE SYSADMIN TO USER TERRAFORM_USER;
+GRANT ROLE SECURITYADMIN TO USER TERRAFORM_USER;
 ```
 
-Verify it worked:
+Verify with `DESC USER TERRAFORM_USER;` — the `RSA_PUBLIC_KEY_FP` row should be populated.
 
-```sql
-DESC USER <your_username>;
+> **Troubleshooting `JWT token is invalid`:** the fingerprint registered on the user must
+> match the private key Terraform uses, and `user`/`role` in `terraform.tfvars` must name the
+> service user and a real role. Compute the local key's fingerprint and compare it to
+> `RSA_PUBLIC_KEY_FP` from `DESC USER`:
+>
+> ```bash
+> echo -n "SHA256:"; openssl pkey -in rsa_key.p8 -pubout -outform DER \
+>   | openssl dgst -sha256 -binary | openssl enc -base64
+> ```
+
+### 5. Configure Terraform variables
+
+Each environment reads connection details from a gitignored `terraform.tfvars`. Copy the
+template and fill it in:
+
+```powershell
+cd terraform\environments\dev
+Copy-Item terraform.tfvars.example terraform.tfvars
 ```
-
-You should see `RSA_PUBLIC_KEY` populated in the output.
-
-#### Update your local .env
 
 ```dotenv
-SNOWFLAKE_PRIVATE_KEY_PATH=rsa_key.p8
-# You can now remove SNOWFLAKE_PASSWORD from .env
+organization_name = "orgname"        # the part of orgname-accountname before the '-'
+account_name      = "accountname"    # the part after the '-'
+user              = "TERRAFORM_USER"
+role              = "SYSADMIN"
+private_key_path  = "C:/Users/you/Dev/rsa_key.p8"   # forward slashes in HCL
 ```
 
----
+No secrets go in the committed `.tf` files — the provider reads these variables and loads the
+private key from disk at run time.
 
-## Setting up GitHub Actions secrets
+### 6. Provision with Terraform
 
-The CI/CD workflows need three secrets. Go to your GitHub repo → **Settings → Secrets and variables → Actions → New repository secret**.
-
-| Secret name | Value |
-| --- | --- |
-| `SNOWFLAKE_ACCOUNT` | Your account identifier (e.g. `orgname-accountname`) |
-| `SNOWFLAKE_USER` | Your Snowflake username |
-| `SNOWFLAKE_PRIVATE_KEY` | Base64-encoded private key (see below) |
-
-### Encode the private key for the secret
-
-**PowerShell:**
+From the environment directory (e.g. `terraform\environments\dev`):
 
 ```powershell
-[Convert]::ToBase64String([IO.File]::ReadAllBytes("rsa_key.p8")) | Set-Clipboard
+terraform init      # downloads the snowflakedb/snowflake provider (first run only)
+terraform fmt       # optional: canonical formatting
+terraform validate  # optional: syntax/reference check, no Snowflake call
+terraform plan      # preview the changes
+terraform apply     # type "yes" to create the objects
 ```
 
-This copies the encoded key to your clipboard. Paste it as the `SNOWFLAKE_PRIVATE_KEY` secret value.
+`apply` writes `terraform.tfstate` into the environment directory — that's your local state.
+Re-running `plan` afterward should report **No changes**. Repeat in
+`terraform\environments\prod` for the PROD environment.
 
-**bash:**
+> If an object already exists in Snowflake (e.g. created earlier by the legacy script),
+> adopt it instead of recreating it: `terraform import <resource_address> <object_name>`,
+> then re-run `plan`.
 
-```bash
-base64 -i rsa_key.p8 | tr -d '\n' | pbcopy   # macOS
-base64 -w 0 rsa_key.p8                         # Linux (prints to stdout)
-```
+### 7. Run dbt
 
-### Enable branch protection
-
-In GitHub → **Settings → Branches → Add rule** for `main`:
-
-- Check **Require a pull request before merging**
-- Check **Require status checks to pass before merging**
-- Search for and add: `lint` and `dbt-validate`
-
-This ensures no code reaches `main` without passing CI.
-
----
-
-## Local development
-
-```bash
-# Activate venv and load .env, then run dbt against DEV:
+```powershell
 uv run dbt compile --profiles-dir dbt
 uv run dbt run --profiles-dir dbt
 uv run dbt test --profiles-dir dbt
 ```
 
-Set `DBT_TARGET=prod` in `.env` to target the PROD database locally (use with care).
+Set `DBT_TARGET=prod` in `.env` to target PROD locally (use with care).
 
----
+### 8. GitHub Actions secrets and branch protection
 
-## CI/CD flow
+The CI/CD workflows need three repository secrets
+(**Settings → Secrets and variables → Actions**):
 
-```text
-feature branch → PR → CI checks (lint + dbt compile vs DEV) → merge to main → CD (dbt run + test vs PROD)
+| Secret | Value |
+| --- | --- |
+| `SNOWFLAKE_ACCOUNT` | Account identifier (`orgname-accountname`) |
+| `SNOWFLAKE_USER` | Snowflake user for the workflow |
+| `SNOWFLAKE_PRIVATE_KEY` | Base64-encoded `rsa_key.p8` |
+
+Encode the key for the secret:
+
+```powershell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("rsa_key.p8")) | Set-Clipboard
 ```
 
-| Workflow | Trigger | What it does |
-| --- | --- | --- |
-| `ci.yml` | Pull request to `main` | Runs `ruff` lint, then `dbt compile` against DEV |
-| `cd.yml` | Push to `main` | Runs `dbt run` + `dbt test` against PROD |
+Then protect `main` under **Settings → Branches → Add rule**: require a pull request and
+require status checks (`lint`, `dbt-validate`) to pass before merging.

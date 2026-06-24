@@ -1,0 +1,8 @@
+# Copy to terraform.tfvars (gitignored) and fill in your values.
+# Your account identifier "orgname-accountname" splits across the two fields.
+
+organization_name = "orgname"
+account_name      = "accountname"
+user              = "TERRAFORM_USER"
+role              = "SYSADMIN"
+private_key_path  = ".../rsa_key.p8"

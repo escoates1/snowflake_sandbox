@@ -6,6 +6,7 @@ A personal learning sandbox for Snowflake, dbt, and CI/CD. The guiding rule: **a
 
 - **Python** 3.12, managed with `uv`
 - **Snowflake** — single trial account with `DEV` and `PROD` databases
+- **Terraform** — provisions Snowflake account objects (`snowflakedb/snowflake` provider `~> 2.0`); project lives in `terraform/`
 - **dbt-snowflake** — dbt project lives in `dbt/`
 - **GitHub Actions** — CI on PRs, CD on merge to main
 - **Ruff** — linting and format checking
@@ -13,6 +14,10 @@ A personal learning sandbox for Snowflake, dbt, and CI/CD. The guiding rule: **a
 ## Architecture decisions
 
 - One Snowflake account, two databases (`DEV`, `PROD`) with matching schemas (`RAW`, `STAGING`, `MARTS`)
+- **Terraform provisions all account objects** (databases, schemas, roles, warehouses), replacing `scripts/setup_snowflake.py` (kept for reference only). dbt builds models on top.
+- Terraform is structured as one directory **per environment** (`terraform/environments/{dev,prod}`) that calls shared `terraform/modules/*`; **local state**, one `terraform.tfstate` per environment directory (swap to a remote backend later via a `backend` block)
+- Terraform authenticates as a dedicated **`TERRAFORM_USER`** service account via key-pair (JWT), with roles `SYSADMIN` (objects) and `SECURITYADMIN` (roles/grants) — not the personal login
+- Terraform connection values live in a gitignored `terraform.tfvars` (committed `terraform.tfvars.example` shows the shape); no secrets in `.tf` files. The account id splits into `organization_name` + `account_name`; HCL paths use forward slashes
 - Key-pair auth for all non-interactive connections (CI/CD and local dev after initial setup)
 - `dbt/profiles.yml` is committed — it contains no secrets, reads everything from env vars
 - Run dbt commands with `--profiles-dir dbt` (or `--profiles-dir .` from inside `dbt/`) so the committed profile is used rather than `~/.dbt/profiles.yml`
@@ -21,7 +26,12 @@ A personal learning sandbox for Snowflake, dbt, and CI/CD. The guiding rule: **a
 ## Repository layout
 
 ```text
-scripts/setup_snowflake.py   — provision Snowflake objects from scratch (idempotent)
+terraform/                   — infrastructure as code for Snowflake account objects
+  modules/                   — reusable: database/, warehouse/, role_grants/
+  environments/
+    dev/                     — versions/variables/providers/main.tf + tfvars; local state
+    prod/                    — same shape as dev
+scripts/setup_snowflake.py   — legacy provisioning script; superseded by Terraform
 dbt/                         — dbt project
   dbt_project.yml
   profiles.yml               — env-var-based, safe to commit
@@ -44,6 +54,10 @@ dbt/                         — dbt project
 | `SNOWFLAKE_WAREHOUSE` | Defaults to `COMPUTE_WH` |
 | `DBT_TARGET` | `dev` or `prod`; defaults to `dev` |
 
+`.env` drives **dbt and the legacy script**. **Terraform does not read `.env`** — it reads each
+environment's `terraform.tfvars` (`organization_name`, `account_name`, `user`, `role`,
+`private_key_path`). Keep the two in sync if the same identity is used for both.
+
 ## GitHub Actions secrets required
 
 `SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER`, `SNOWFLAKE_PRIVATE_KEY` (base64-encoded `rsa_key.p8`)
@@ -51,15 +65,22 @@ dbt/                         — dbt project
 ## Progress
 
 ### Done
-- [x] Snowflake environment provisioning script (`scripts/setup_snowflake.py`)
+
+- [x] Snowflake environment provisioning script (`scripts/setup_snowflake.py`) — now superseded by Terraform
 - [x] dbt project scaffold with env-var-based profiles
 - [x] CI workflow: ruff lint + dbt compile against DEV (on PR to main)
 - [x] CD workflow: dbt run + dbt test against PROD (on merge to main)
 - [x] Key-pair auth setup guide in README (PowerShell + bash)
 - [x] Branch protection instructions in README
+- [x] Terraform scaffold: per-environment dirs + shared modules, local state
+- [x] `TERRAFORM_USER` service account with key-pair (JWT) auth
+- [x] `dev` provider config wired up (`snowflakedb/snowflake ~> 2.0`)
 
 ### Next / ideas to explore
-- [ ] Complete first-time setup: run `setup_snowflake.py`, configure key-pair, add GitHub secrets, enable branch protection
+
+- [ ] Build the `database`/`warehouse`/`role_grants` modules and call them from `environments/dev/main.tf`
+- [ ] `terraform import` objects the legacy script already created, then replicate to `prod`
+- [ ] Add a Terraform CI/CD workflow (fmt + validate + plan on PR; apply on merge)
 - [ ] Build first dbt model — a simple staging model over a raw source
 - [ ] Add dbt sources (`sources.yml`) and generic tests (`not_null`, `unique`)
 - [ ] Load sample data into `DEV.RAW` to have something to model
