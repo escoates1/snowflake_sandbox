@@ -27,3 +27,10 @@ variable "private_key_path" {
   type        = string
   description = "Absolute path to the unencrypted PKCS#8 private key (rsa_key.p8)."
 }
+
+# --------------------------------- WAREHOUSES ---------------------------------
+variable "warehouse_size" {
+  type        = string
+  description = "Snowflake warehouse size for this environment."
+  default     = "XSMALL"
+}
