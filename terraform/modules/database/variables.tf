@@ -6,5 +6,5 @@ variable "name" {
 variable "schemas" {
   type        = list(string)
   description = "Schemas to create inside the database."
-  default     = ["RAW", "STAGING", "CONFORMED", "PRESENTATION"]
+  default     = ["RAW", "STAGING", "MARTS", "PRESENTATION"]
 }

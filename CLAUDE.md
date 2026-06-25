@@ -13,7 +13,7 @@ A personal learning sandbox for Snowflake, dbt, and CI/CD. The guiding rule: **a
 
 ## Architecture decisions
 
-- One Snowflake account, two databases (`DEV`, `PROD`) with matching schemas (`RAW`, `STAGING`, `MARTS`)
+- One Snowflake account, 3 databases (`DWH_DEV`, `DWH_TEST`, `DWH_PROD`) with matching schemas (`RAW`, `STAGING`, `MARTS`, `PRESENTATION`.)
 - **Terraform provisions all account objects** (databases, schemas, roles, warehouses), replacing `scripts/setup_snowflake.py` (kept for reference only). dbt builds models on top.
 - Terraform is structured as one directory **per environment** (`terraform/environments/{dev,prod}`) that calls shared `terraform/modules/*`; **local state**, one `terraform.tfstate` per environment directory (swap to a remote backend later via a `backend` block)
 - Terraform authenticates as a dedicated **`TERRAFORM_USER`** service account via key-pair (JWT), with roles `SYSADMIN` (objects) and `SECURITYADMIN` (roles/grants) — not the personal login

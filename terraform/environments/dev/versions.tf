@@ -8,6 +8,12 @@ terraform {
     }
   }
 
-  # Local state for now, one state file per environment (this directory).
-  # To move to a remote backend later, add a `backend "..."` block here.
+  cloud {
+    organization = "escoates1-org"
+    workspaces {
+      name = "snowflake-sandbox"
+    }
+  }
 }
+
+

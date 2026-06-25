@@ -8,6 +8,6 @@ resource "snowflake_schema" "this" {
   database = snowflake_database.this.name
   name     = each.value
 
-  data_retention_time_in_days                   = 1
-  max_data_extension_time_in_days               = 10
+  data_retention_time_in_days     = 1
+  max_data_extension_time_in_days = 10
 }
