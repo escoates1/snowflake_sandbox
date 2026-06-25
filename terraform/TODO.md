@@ -2,3 +2,4 @@
 
 - Warehouse
 - Roles
+- RBAC
