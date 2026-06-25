@@ -10,7 +10,6 @@ resource "snowflake_warehouse" "this" {
   initially_suspended                 = true
   comment                             = "Warehouse for BAU operations"
   enable_query_acceleration           = false
-
   max_concurrency_level               = 4
   statement_queued_timeout_in_seconds = 10
   statement_timeout_in_seconds        = 300
