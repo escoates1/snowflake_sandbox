@@ -134,7 +134,7 @@ jobs:
 
   # TEST
   apply-test:
-    needs: plan 
+    needs: apply-dev 
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     environment: snowflake-test
