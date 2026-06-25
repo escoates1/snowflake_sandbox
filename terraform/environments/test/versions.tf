@@ -11,7 +11,7 @@ terraform {
   cloud {
     organization = "escoates1-org"
     workspaces {
-      name = "snowflake-sandbox-dev"
+      name = "snowflake-sandbox-test"
     }
   }
 }
