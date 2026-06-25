@@ -187,3 +187,5 @@ Encode the key for the secret:
 
 Then protect `main` under **Settings → Branches → Add rule**: require a pull request and
 require status checks (`lint`, `dbt-validate`) to pass before merging.
+
+Test change.
