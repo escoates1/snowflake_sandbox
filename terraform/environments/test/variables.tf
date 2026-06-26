@@ -34,3 +34,16 @@ variable "warehouse_size" {
   description = "Snowflake warehouse size for this environment."
   default     = "SMALL"
 }
+
+# ----------------------------------- GRANTS -----------------------------------
+variable "engineer_role_name" {
+  type        = string
+  description = "Account role granted read/write across all schemas."
+  default     = "ENGINEER"
+}
+
+variable "analyst_role_name" {
+  type        = string
+  description = "Account role granted read-only access to PRESENTATION."
+  default     = "ANALYST"
+}

@@ -42,7 +42,7 @@ jobs:
   plan:
     strategy:
       matrix:
-        environment: [dev, test]
+        environment: [account, dev, test]
       fail-fast: false
     runs-on: ubuntu-latest
     defaults:
@@ -106,9 +106,35 @@ jobs:
   # APPLY — runs only after a merge to main, and only after you click "approve".
   # ----------------------------------------------------------------------------
 
+  # ACCOUNT
+  apply-account:
+    needs: plan                               
+    if: github.event_name == 'push'              
+    runs-on: ubuntu-latest
+    environment: snowflake-account
+    defaults:
+      run:
+        working-directory: terraform/environments/account
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Write private key
+        run: echo "${{ secrets.TERRAFORM_PRIVATE_KEY }}" | base64 -d > /tmp/rsa_key.p8
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          cli_config_credentials_token: ${{ secrets.TF_API_TOKEN }}
+
+      - name: Terraform init
+        run: terraform init -input=false
+
+      - name: Terraform apply
+        run: terraform apply -input=false -auto-approve
+
   # DEV
   apply-dev:
-    needs: plan                               
+    needs: apply-account                               
     if: github.event_name == 'push'              
     runs-on: ubuntu-latest
     environment: snowflake-dev
