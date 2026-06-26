@@ -34,3 +34,5 @@ variable "warehouse_size" {
   description = "Snowflake warehouse size for this environment."
   default     = "XSMALL"
 }
+
+# ----------------------------------- GRANTS -----------------------------------

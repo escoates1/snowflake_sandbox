@@ -46,6 +46,15 @@ The private key file (`rsa_key.p8`) is also gitignored and kept outside the repo
 
 ---
 
+## Custom Roles
+
+For simplicity in a sandbox environment, the below roles have access across all database environments. In a real-world scenario, there might be a separate role generated per environment to give finer grained permissions.
+
+- ENGINEER - read/write across across all schemas.
+- ANALYST - read access only in the `PRESENTATION` schema.
+
+---
+
 ## Setup instructions
 
 ### 1. Tools
