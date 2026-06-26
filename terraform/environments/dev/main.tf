@@ -10,10 +10,18 @@ module "warehouse" {
 
 module "role" {
   source = "../../modules/role"
+
+  providers = {
+    snowflake = snowflake.securityadmin
+  }
 }
 
 module "grants" {
   source = "../../modules/grants"
+
+  providers = {
+    snowflake = snowflake.securityadmin
+  }
 
   engineer_role_name = module.role.engineer_role_name
   analyst_role_name  = module.role.analyst_role_name
