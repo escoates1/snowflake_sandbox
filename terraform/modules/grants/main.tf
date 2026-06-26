@@ -8,11 +8,11 @@ locals {
 # 1. Warehouse
 resource "snowflake_grant_privileges_to_account_role" "analyst_warehouse" {
   account_role_name = var.analyst_role_name
-  privileges        = ["USAGE"] 
-   
+  privileges        = ["USAGE"]
+
   on_account_object {
-      object_type = "WAREHOUSE"
-      object_name = var.warehouse_name
+    object_type = "WAREHOUSE"
+    object_name = var.warehouse_name
   }
 }
 
@@ -20,10 +20,10 @@ resource "snowflake_grant_privileges_to_account_role" "analyst_warehouse" {
 resource "snowflake_grant_privileges_to_account_role" "analyst_database" {
   account_role_name = var.analyst_role_name
   privileges        = ["USAGE"]
-  
+
   on_account_object {
-      object_type = "DATABASE"
-      object_name = var.database_name
+    object_type = "DATABASE"
+    object_name = var.database_name
   }
 }
 
