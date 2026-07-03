@@ -28,7 +28,7 @@ resource "snowflake_grant_privileges_to_account_role" "analyst_database" {
   }
 }
 
-# 3. Schema - existing
+# 3. Schema
 resource "snowflake_grant_privileges_to_account_role" "analyst_schema" {
   account_role_name = var.analyst_role_name
   privileges        = ["USAGE"]
