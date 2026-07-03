@@ -140,7 +140,7 @@ resource "snowflake_grant_privileges_to_account_role" "engineer_existing_schema"
 }
 
 # 3b. Schema - existing
-resource "snowflake_grant_privileges_to_account_role" "analyst_future_schema" {
+resource "snowflake_grant_privileges_to_account_role" "engineer_future_schema" {
   account_role_name = var.engineer_role_name
   privileges = [
     "USAGE",
