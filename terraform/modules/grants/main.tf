@@ -28,7 +28,7 @@ resource "snowflake_grant_privileges_to_account_role" "analyst_database" {
   }
 }
 
-# 3. Schema
+# 3. Schema - existing
 resource "snowflake_grant_privileges_to_account_role" "analyst_schema" {
   account_role_name = var.analyst_role_name
   privileges        = ["USAGE"]
@@ -116,8 +116,8 @@ resource "snowflake_grant_privileges_to_account_role" "engineer_database" {
   }
 }
 
-# 3. Schema
-resource "snowflake_grant_privileges_to_account_role" "engineer_schema" {
+# 3a. Schema
+resource "snowflake_grant_privileges_to_account_role" "engineer_existing_schema" {
   account_role_name = var.engineer_role_name
   privileges = [
     "USAGE",
@@ -136,6 +136,29 @@ resource "snowflake_grant_privileges_to_account_role" "engineer_schema" {
 
   on_schema {
     all_schemas_in_database = var.database_name
+  }
+}
+
+# 3b. Schema - existing
+resource "snowflake_grant_privileges_to_account_role" "analyst_future_schema" {
+  account_role_name = var.engineer_role_name
+  privileges = [
+    "USAGE",
+    "CREATE TABLE",
+    "CREATE VIEW",
+    "CREATE STAGE",
+    "CREATE FILE FORMAT",
+    "CREATE FUNCTION",
+    "CREATE PROCEDURE",
+    "CREATE SEQUENCE",
+    "CREATE STREAM",
+    "CREATE TASK",
+    "CREATE DYNAMIC TABLE",
+    # "CREATE MATERIALIZED VIEW" - not supported on Standard edition of Snowflake
+  ]
+
+  on_schema {
+    future_schemas_in_database = var.database_name
   }
 }
 
