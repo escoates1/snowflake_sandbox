@@ -13,19 +13,20 @@ Keep the CLAUDE.md file up to date as the project evolves.
 ## Stack
 
 - **Python** 3.12, managed with `uv`
-- **Snowflake** — single trial account with `DEV` and `PROD` databases
-- **Terraform** — provisions Snowflake account objects (`snowflakedb/snowflake` provider `~> 2.0`); project lives in `terraform/`
+- **Snowflake** — single trial account (Standard Edition) with `DWH_DEV`, `DWH_TEST`, and `DWH_PROD` databases
+- **Terraform** — provisions Snowflake account objects (`snowflakedb/snowflake` provider `~> 2.17`); project lives in `terraform/`; state in HCP Terraform
 - **dbt-snowflake** — dbt project lives in `dbt/`
 - **GitHub Actions** — CI on PRs, CD on merge to main
 - **Ruff** — linting and format checking
 
 ## Architecture decisions
 
-- One Snowflake account, 3 databases (`DWH_DEV`, `DWH_TEST`, `DWH_PROD`) with matching schemas (`RAW`, `STAGING`, `MARTS`, `PRESENTATION`.)
+- One Snowflake account, per-environment databases (`DWH_DEV`, `DWH_TEST`, `DWH_PROD`) with matching schemas (`RAW`, `STAGING`, `MARTS`, `PRESENTATION`).
 - **Terraform provisions all account objects** (databases, schemas, roles, warehouses), replacing `scripts/setup_snowflake.py` (kept for reference only). dbt builds models on top.
-- Terraform is structured as one directory **per environment** (`terraform/environments/{dev,prod}`) that calls shared `terraform/modules/*`; **local state**, one `terraform.tfstate` per environment directory (swap to a remote backend later via a `backend` block)
-- Terraform authenticates as a dedicated **`TERRAFORM_USER`** service account via key-pair (JWT), with roles `SYSADMIN` (objects) and `SECURITYADMIN` (roles/grants) — not the personal login
-- Terraform connection values live in a gitignored `terraform.tfvars` (committed `terraform.tfvars.example` shows the shape); no secrets in `.tf` files. The account id splits into `organization_name` + `account_name`; HCL paths use forward slashes
+- Terraform is structured as one directory **per environment** (`terraform/environments/{account,dev,test,prod}`) that calls shared `terraform/modules/*`. The **`account`** environment creates account-wide objects (the custom roles); **`dev`**/**`test`**/**`prod`** each create a database + warehouse and grant the roles. `account` must be applied before the database environments.
+- **State lives in HCP Terraform**, one workspace per environment (org `escoates1-org`; workspaces `snowflake-sandbox-{account,dev,test}`), configured via a `cloud {}` block in each env's `versions.tf`. Workspaces use **Local execution mode** — state is stored/locked remotely, but runs happen on the local machine so the provider can read the local private-key file. (See `terraform/README.md`.)
+- Terraform authenticates as a dedicated **`TERRAFORM_USER`** service account via key-pair (JWT), with roles `SYSADMIN` (objects) and `SECURITYADMIN` (roles/grants) — not the personal login. `providers.tf` declares two providers: the default (`SYSADMIN`) and an aliased `securityadmin`.
+- Terraform connection values are supplied locally (Local execution mode) via a gitignored `terraform.tfvars` **or** `TF_VAR_*` environment variables; no secrets in `.tf` files. The account id splits into `organization_name` + `account_name`; HCL paths use forward slashes.
 - Key-pair auth for all non-interactive connections (CI/CD and local dev after initial setup)
 - `dbt/profiles.yml` is committed — it contains no secrets, reads everything from env vars
 - Run dbt commands with `--profiles-dir dbt` (or `--profiles-dir .` from inside `dbt/`) so the committed profile is used rather than `~/.dbt/profiles.yml`
@@ -35,10 +36,13 @@ Keep the CLAUDE.md file up to date as the project evolves.
 
 ```text
 terraform/                   — infrastructure as code for Snowflake account objects
-  modules/                   — reusable: database/, warehouse/, role_grants/
+  README.md                  — full Terraform guide (modules, HCP workspaces, apply order)
+  modules/                   — reusable: database/, warehouse/, role/, grants/
   environments/
-    dev/                     — versions/variables/providers/main.tf + tfvars; local state
-    prod/                    — same shape as dev
+    account/                 — account-wide objects: custom roles; apply FIRST
+    dev/                     — DWH_DEV + WH_DEV + grants; HCP state
+    test/                    — DWH_TEST + WH_TEST + grants; HCP state
+    prod/                    — DWH_PROD + WH_PROD + grants; HCP state
 scripts/setup_snowflake.py   — legacy provisioning script; superseded by Terraform
 dbt/                         — dbt project
   dbt_project.yml
@@ -46,10 +50,17 @@ dbt/                         — dbt project
   packages.yml
   models/                    — empty; add staging/ and marts/ subdirs as you build
 .github/workflows/
-  ci.yml                     — lint (ruff) + dbt compile against DEV; runs on every PR
-  cd.yml                     — dbt run + dbt test against PROD; runs on merge to main
+  terraform.yml              — PR: fmt/validate/plan (all envs); merge: gated apply account→dev→test→prod
+  ci.txt                     — (inactive .txt) ruff lint + dbt compile against DEV
+  cd.txt                     — (inactive .txt) dbt run + dbt test against PROD
 .env.example                 — credential template; copy to .env (gitignored)
 ```
+
+## Custom roles
+
+- **ENGINEER** — read/write across all schemas of a database (created in `account`, granted per-database in `dev`/`test`).
+- **ANALYST** — read-only on the `PRESENTATION` schema.
+- Role-to-user membership is data-driven: each env's `role_members` variable maps a role name to a list of users, flattened with `for_each` in `modules/grants`.
 
 ## Environment variables
 
@@ -62,9 +73,11 @@ dbt/                         — dbt project
 | `SNOWFLAKE_WAREHOUSE` | Defaults to `COMPUTE_WH` |
 | `DBT_TARGET` | `dev` or `prod`; defaults to `dev` |
 
-`.env` drives **dbt and the legacy script**. **Terraform does not read `.env`** — it reads each
-environment's `terraform.tfvars` (`organization_name`, `account_name`, `user`, `role`,
-`private_key_path`). Keep the two in sync if the same identity is used for both.
+`.env` drives **dbt and the legacy script**. **Terraform does not read `.env`.** Under Local
+execution mode Terraform reads each environment's connection inputs (`organization_name`,
+`account_name`, `user`, `role`, `private_key_path`) from a gitignored `terraform.tfvars` **or**
+from `TF_VAR_*` environment variables. Keep these in sync with `.env` if the same identity is used
+for both.
 
 ## GitHub Actions secrets required
 
@@ -80,18 +93,24 @@ environment's `terraform.tfvars` (`organization_name`, `account_name`, `user`, `
 - [x] CD workflow: dbt run + dbt test against PROD (on merge to main)
 - [x] Key-pair auth setup guide in README (PowerShell + bash)
 - [x] Branch protection instructions in README
-- [x] Terraform scaffold: per-environment dirs + shared modules, local state
+- [x] Terraform scaffold: per-environment dirs + shared modules
 - [x] `TERRAFORM_USER` service account with key-pair (JWT) auth
-- [x] `dev` provider config wired up (`snowflakedb/snowflake ~> 2.0`)
+- [x] `database`, `warehouse`, `role`, and `grants` modules built and wired into all four environments
+- [x] Custom roles (`ENGINEER`, `ANALYST`) with privilege grants and data-driven role-to-user membership
+- [x] Migrated Terraform state to HCP Terraform (one workspace per environment, Local execution)
+- [x] `account`, `dev`, `test`, and `prod` environments all provisioned
+- [x] Terraform CI/CD (`terraform.yml`): fmt/validate/plan on PR (all envs, plan posted as PR comment); gated sequential apply (`account→dev→test→prod`) on merge
 
 ### Next / ideas to explore
 
-- [ ] Build the `database`/`warehouse`/`role_grants` modules and call them from `environments/dev/main.tf`
-- [ ] `terraform import` objects the legacy script already created, then replicate to `prod`
-- [ ] Add a Terraform CI/CD workflow (fmt + validate + plan on PR; apply on merge)
+- [ ] Extend Terraform CI with `tflint` + a security scanner (`checkov`/`tfsec`)
+- [ ] Harden secrets: mark connection variables `sensitive`; move to a passphrase-protected key
+- [ ] Add a `snowflake_resource_monitor` to cap trial-account credit usage
+- [ ] Establish role hierarchy: grant custom roles up to `SYSADMIN`
+- [ ] Add `terraform test` coverage for the `grants` module (membership flattening)
 - [ ] Build first dbt model — a simple staging model over a raw source
 - [ ] Add dbt sources (`sources.yml`) and generic tests (`not_null`, `unique`)
-- [ ] Load sample data into `DEV.RAW` to have something to model
+- [ ] Load sample data into `DWH_DEV.RAW` to have something to model
 - [ ] Explore dbt snapshots (SCD Type 2)
 - [ ] Add `dbt test` to the CI workflow once models exist
 - [ ] Explore Snowflake features: dynamic tables, streams, tasks
