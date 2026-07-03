@@ -23,4 +23,5 @@ variable "role" {
 variable "private_key_path" {
   type        = string
   description = "Absolute path to the unencrypted PKCS#8 private key (rsa_key.p8)."
+  sensitive   = true
 }

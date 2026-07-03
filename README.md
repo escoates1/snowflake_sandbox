@@ -17,13 +17,17 @@ Terraform replaces the earlier `scripts/setup_snowflake.py`, which is kept only 
 ```text
 .
 ├── terraform/                  # Infrastructure as code — Snowflake account objects
+│   ├── README.md               # Full Terraform guide (modules, HCP workspaces, apply order)
 │   ├── modules/                # Reusable building blocks
-│   │   ├── database/           #   a database + its RAW/STAGING/MARTS schemas
+│   │   ├── database/           #   a database + its RAW/STAGING/MARTS/PRESENTATION schemas
 │   │   ├── warehouse/          #   a warehouse with size/auto-suspend settings
-│   │   └── role_grants/        #   roles and grants
-│   └── environments/           # One directory + state file per environment
-│       ├── dev/                #   DEV: versions/variables/providers/main + tfvars
-│       └── prod/               #   PROD: same shape as dev
+│   │   ├── role/               #   account-level custom roles (ENGINEER, ANALYST)
+│   │   └── grants/             #   privilege grants + role-to-user memberships
+│   └── environments/           # One directory + one HCP workspace per environment
+│       ├── account/            #   account-wide objects (custom roles) — apply FIRST
+│       ├── dev/                #   DWH_DEV database + WH_DEV warehouse + grants
+│       ├── test/               #   DWH_TEST database + WH_TEST warehouse + grants
+│       └── prod/               #   DWH_PROD database + WH_PROD warehouse + grants
 ├── dbt/                        # dbt project
 │   ├── dbt_project.yml
 │   ├── profiles.yml            # Reads credentials from env vars (safe to commit)
@@ -33,16 +37,19 @@ Terraform replaces the earlier `scripts/setup_snowflake.py`, which is kept only 
 │   └── setup_snowflake.py      # Legacy provisioning script — superseded by Terraform
 ├── .github/
 │   └── workflows/
-│       ├── ci.yml              # On every PR: ruff lint + dbt compile against DEV
-│       └── cd.yml              # On merge to main: dbt run + dbt test against PROD
+│       ├── terraform.yml       # PR: fmt/validate/plan (all envs); merge: gated apply
+│       ├── ci.txt              # (inactive .txt) ruff lint + dbt compile against DEV
+│       └── cd.txt              # (inactive .txt) dbt run + dbt test against PROD
 ├── .env.example                # Credential template — copy to .env (gitignored)
 └── pyproject.toml
 ```
 
-**State and secrets** are deliberately kept out of git: each environment uses **local
-state** (`terraform.tfstate` in its own directory), and machine-specific values live in a
-gitignored `terraform.tfvars` (a committed `terraform.tfvars.example` shows the shape).
-The private key file (`rsa_key.p8`) is also gitignored and kept outside the repo.
+**State and secrets** are deliberately kept out of git. Terraform state lives in **HCP Terraform**
+(one workspace per environment; see `terraform/README.md`), configured with **Local execution
+mode** so runs happen on your machine and can read the local key file. Machine-specific connection
+values are supplied locally via a gitignored `terraform.tfvars` or `TF_VAR_*` environment
+variables — never committed. The private key file (`rsa_key.p8`) is gitignored and kept outside
+the repo.
 
 ---
 
@@ -52,6 +59,9 @@ For simplicity in a sandbox environment, the below roles have access across all 
 
 - ENGINEER - read/write across across all schemas.
 - ANALYST - read access only in the `PRESENTATION` schema.
+
+The roles themselves are created once in the **`account`** environment; each of `dev`/`test`
+then grants those roles privileges on its own database and assigns them to users.
 
 ---
 
@@ -66,6 +76,8 @@ For simplicity in a sandbox environment, the below roles have access across all 
 | OpenSSL | `winget install ShiningLight.OpenSSL` |
 
 Verify with `terraform -version` and `openssl version`.
+
+You also need a free **HCP Terraform** account for remote state — see `terraform/README.md`.
 
 ### 2. Python environment
 
@@ -126,48 +138,32 @@ Verify with `DESC USER TERRAFORM_USER;` — the `RSA_PUBLIC_KEY_FP` row should b
 >   | openssl dgst -sha256 -binary | openssl enc -base64
 > ```
 
-### 5. Configure Terraform variables
+### 5. Provision with Terraform
 
-Each environment reads connection details from a gitignored `terraform.tfvars`. Copy the
-template and fill it in:
-
-```powershell
-cd terraform\environments\dev
-Copy-Item terraform.tfvars.example terraform.tfvars
-```
-
-```dotenv
-organization_name = "orgname"        # the part of orgname-accountname before the '-'
-account_name      = "accountname"    # the part after the '-'
-user              = "TERRAFORM_USER"
-role              = "SYSADMIN"
-private_key_path  = "C:/Users/you/Dev/rsa_key.p8"   # forward slashes in HCL
-```
-
-No secrets go in the committed `.tf` files — the provider reads these variables and loads the
-private key from disk at run time.
-
-### 6. Provision with Terraform
-
-From the environment directory (e.g. `terraform\environments\dev`):
+Full details — including the one-time HCP workspace creation, connection variables, and the
+required apply order — live in **[`terraform/README.md`](terraform/README.md)**. In short:
 
 ```powershell
-terraform init      # downloads the snowflakedb/snowflake provider (first run only)
-terraform fmt       # optional: canonical formatting
-terraform validate  # optional: syntax/reference check, no Snowflake call
-terraform plan      # preview the changes
-terraform apply     # type "yes" to create the objects
+terraform login                       # once: authenticate the CLI to HCP Terraform
+
+cd terraform\environments\account     # apply the ACCOUNT env first (creates the roles)
+terraform init
+terraform apply
+
+cd ..\dev                             # then each database environment: dev, test, prod
+terraform init
+terraform apply
 ```
 
-`apply` writes `terraform.tfstate` into the environment directory — that's your local state.
-Re-running `plan` afterward should report **No changes**. Repeat in
-`terraform\environments\prod` for the PROD environment.
+`account` must be applied before `dev`/`test`/`prod`, because those environments grant the roles
+the `account` environment creates. Re-running `plan` afterward should report **No changes**.
 
-> If an object already exists in Snowflake (e.g. created earlier by the legacy script),
-> adopt it instead of recreating it: `terraform import <resource_address> <object_name>`,
-> then re-run `plan`.
+You don't have to run these by hand: **`.github/workflows/terraform.yml`** plans all environments
+on every PR (posting the plan as a PR comment) and, on merge to `main`, applies them in order
+(`account → dev → test → prod`) behind GitHub Environment approval gates. See
+[`terraform/README.md`](terraform/README.md) for the CI/CD details and required secrets.
 
-### 7. Run dbt
+### 6. Run dbt
 
 ```powershell
 uv run dbt compile --profiles-dir dbt
@@ -177,7 +173,7 @@ uv run dbt test --profiles-dir dbt
 
 Set `DBT_TARGET=prod` in `.env` to target PROD locally (use with care).
 
-### 8. GitHub Actions secrets and branch protection
+### 7. GitHub Actions secrets and branch protection
 
 The CI/CD workflows need three repository secrets
 (**Settings → Secrets and variables → Actions**):
@@ -196,5 +192,3 @@ Encode the key for the secret:
 
 Then protect `main` under **Settings → Branches → Add rule**: require a pull request and
 require status checks (`lint`, `dbt-validate`) to pass before merging.
-
-Test change.
