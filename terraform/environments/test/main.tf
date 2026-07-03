@@ -19,6 +19,7 @@ module "grants" {
   analyst_role_name  = var.analyst_role_name
   database_name      = module.database.name
   warehouse_name     = module.warehouse.name
+  role_members       = var.role_members
 
   # Ensures database creation before grants are applied
   depends_on = [module.database]
