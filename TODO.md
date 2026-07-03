@@ -1,3 +1,17 @@
-# To do items
+# To Do
 
-- Set the Terraform state file from local state to a remote state
+## Terraform
+
+- [x] Warehouse
+- [x] Roles
+- [x] Role grants
+- [ ] Production config
+- [ ] Refactor folders - take versions.tf out of every directory?
+
+## dbt
+
+- [ ] Model data
+- [ ] Build models
+- [ ] Testing strategy
+- [ ] Create views in presentation layer
+- [ ] CI/CD across envs

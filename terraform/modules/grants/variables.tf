@@ -23,3 +23,9 @@ variable "presentation_schema_name" {
   description = "Schema the ANALYST role gets read access to."
   default     = "PRESENTATION"
 }
+
+variable "role_members" {
+  description = "Account role name -> list of users that should hold it."
+  type        = map(list(string))
+  default     = {}
+}
