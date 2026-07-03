@@ -5,7 +5,7 @@
 - [x] Warehouse
 - [x] Roles
 - [x] Role grants
-- [ ] Production config
+- [x] Production config
 - [ ] Refactor folders - take versions.tf out of every directory?
 
 ## dbt
