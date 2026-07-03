@@ -131,7 +131,7 @@ resource "snowflake_grant_privileges_to_account_role" "engineer_schema" {
     "CREATE STREAM",
     "CREATE TASK",
     "CREATE DYNAMIC TABLE",
-    "CREATE MATERIALIZED VIEW"
+    # "CREATE MATERIALIZED VIEW" - not supported on Standard edition of Snowflake
   ]
 
   on_schema {
