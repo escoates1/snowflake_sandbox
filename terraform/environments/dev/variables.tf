@@ -47,3 +47,12 @@ variable "analyst_role_name" {
   description = "Account role granted read-only access to PRESENTATION."
   default     = "ANALYST"
 }
+
+variable "role_members" {
+  description = "Account role name -> list of users that should hold it."
+  type        = map(list(string))
+  default = {
+    ENGINEER = ["ESCOATES1"]
+    ANALYST  = ["ESCOATES1"]
+  }
+}
