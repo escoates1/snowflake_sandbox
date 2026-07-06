@@ -1,0 +1,76 @@
+USE ROLE ENGINEER;
+
+MERGE INTO DWH_DEV.ADMIN.INGESTION_METADATA AS target
+USING (
+    SELECT 
+        column1 AS LOAD_ID, 
+        column2 AS SOURCE_NAME
+    FROM VALUES
+        ('P1', 'USGC_EARTHQUAKES')
+) AS source
+ON target.LOAD_ID = source.LOAD_ID
+
+WHEN MATCHED 
+AND target.SOURCE_NAME <> source.SOURCE_NAME
+THEN UPDATE SET target.SOURCE_NAME = source.SOURCE_NAME
+
+WHEN NOT MATCHED
+THEN INSERT (
+    LOAD_ID,
+    SOURCE_NAME
+    )
+VALUES (
+    source.LOAD_ID,
+    source.SOURCE_NAME
+    )
+;
+
+MERGE INTO DWH_TEST.ADMIN.INGESTION_METADATA AS target
+USING (
+    SELECT 
+        column1 AS LOAD_ID, 
+        column2 AS SOURCE_NAME
+    FROM VALUES
+        ('P1', 'USGC_EARTHQUAKES')
+) AS source
+ON target.LOAD_ID = source.LOAD_ID
+
+WHEN MATCHED 
+AND target.SOURCE_NAME <> source.SOURCE_NAME
+THEN UPDATE SET target.SOURCE_NAME = source.SOURCE_NAME
+
+WHEN NOT MATCHED
+THEN INSERT (
+    LOAD_ID,
+    SOURCE_NAME
+    )
+VALUES (
+    source.LOAD_ID,
+    source.SOURCE_NAME
+    )
+;
+
+MERGE INTO DWH_PROD.ADMIN.INGESTION_METADATA AS target
+USING (
+    SELECT 
+        column1 AS LOAD_ID, 
+        column2 AS SOURCE_NAME
+    FROM VALUES
+        ('P1', 'USGC_EARTHQUAKES')
+) AS source
+ON target.LOAD_ID = source.LOAD_ID
+
+WHEN MATCHED 
+AND target.SOURCE_NAME <> source.SOURCE_NAME
+THEN UPDATE SET target.SOURCE_NAME = source.SOURCE_NAME
+
+WHEN NOT MATCHED
+THEN INSERT (
+    LOAD_ID,
+    SOURCE_NAME
+    )
+VALUES (
+    source.LOAD_ID,
+    source.SOURCE_NAME
+    )
+;

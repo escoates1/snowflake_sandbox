@@ -6,7 +6,19 @@
 - [x] Roles
 - [x] Role grants
 - [x] Production config
-- [ ] Refactor folders - take versions.tf out of every directory?
+
+## Data Model
+
+- [ ] Design conceptual, logical, physical data model for earthquakes
+- [ ] Documentation
+
+## Ingestion
+
+- [ ] Create ingestion audit table to be able to store watermark
+- [ ] Create python ingestion scripts
+- [ ] Automate with a task - ad hoc runs
+- [ ] Split ingestion scripts into individual envs
+- [ ] Configure ingestion scripts with CI/CD
 
 ## dbt
 
@@ -15,3 +27,4 @@
 - [ ] Testing strategy
 - [ ] Create views in presentation layer
 - [ ] CI/CD across envs
+- [ ] Create a run-operation macro to execute the ingestion_metadata_ddl scripts per dbt run

@@ -1,14 +1,13 @@
 # snowflake_sandbox
 
-A personal learning sandbox for Snowflake, dbt, and CI/CD.
+A personal learning sandbox for Terraform, dbt, CI/CD and Snowflake.
 
 The guiding rule: **all Snowflake objects are created via code, never via Snowsight.**
 
 - **Terraform** provisions account-level objects — databases, schemas, roles, and warehouses.
 - **dbt** builds the models (staging/marts) on top of those objects.
 - The single permitted Snowsight action is the one-time registration of an RSA public key for key-pair auth (an account operation Terraform can't bootstrap for itself).
-
-Terraform replaces the earlier `scripts/setup_snowflake.py`, which is kept only for reference.
+- For Snowflake objects not fully compatible with Terraform yet (e.g. tables, network rules, external access integrations), SQL scripts are maintained in the /scripts directory.
 
 ---
 
