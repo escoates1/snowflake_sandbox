@@ -28,3 +28,4 @@
 - [ ] Create views in presentation layer
 - [ ] CI/CD across envs
 - [ ] Create a run-operation macro to execute the ingestion_metadata_ddl scripts per dbt run
+- [ ] Create a new service account for running the dbt jobs with. Engineer is fine as a placeholder for now.

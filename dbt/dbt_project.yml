@@ -12,7 +12,7 @@ models:
   snowflake_sandbox:
     staging:
       +schema: staging
-      +materialized: view
+      +materialized: table
     marts:
       +schema: marts
       +materialized: table

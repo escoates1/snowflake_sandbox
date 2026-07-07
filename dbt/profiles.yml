@@ -8,8 +8,19 @@ snowflake_sandbox:
       account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
       user: "{{ env_var('SNOWFLAKE_USER') }}"
       private_key_path: "{{ env_var('SNOWFLAKE_PRIVATE_KEY_PATH') }}"
-      database: DEV
-      warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE', 'COMPUTE_WH') }}"
+      role: "{{ env_var('SNOWFLAKE_ROLE', 'ENGINEER') }}"
+      database: DWH_DEV
+      warehouse: WH_DEV
+      schema: staging
+      threads: 4
+    test:
+      type: snowflake
+      account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
+      user: "{{ env_var('SNOWFLAKE_USER') }}"
+      private_key_path: "{{ env_var('SNOWFLAKE_PRIVATE_KEY_PATH') }}"
+      role: "{{ env_var('SNOWFLAKE_ROLE', 'ENGINEER') }}"
+      database: DWH_TEST
+      warehouse: WH_TEST
       schema: staging
       threads: 4
     prod:
@@ -17,7 +28,8 @@ snowflake_sandbox:
       account: "{{ env_var('SNOWFLAKE_ACCOUNT') }}"
       user: "{{ env_var('SNOWFLAKE_USER') }}"
       private_key_path: "{{ env_var('SNOWFLAKE_PRIVATE_KEY_PATH') }}"
-      database: PROD
-      warehouse: "{{ env_var('SNOWFLAKE_WAREHOUSE', 'COMPUTE_WH') }}"
+      role: "{{ env_var('SNOWFLAKE_ROLE', 'ENGINEER') }}"
+      database: DWH_PROD
+      warehouse: WH_PROD
       schema: staging
       threads: 4

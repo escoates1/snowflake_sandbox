@@ -7,7 +7,7 @@ The guiding rule: **all Snowflake objects are created via code, never via Snowsi
 - **Terraform** provisions account-level objects — databases, schemas, roles, and warehouses.
 - **dbt** builds the models (staging/marts) on top of those objects.
 - The single permitted Snowsight action is the one-time registration of an RSA public key for key-pair auth (an account operation Terraform can't bootstrap for itself).
-- For Snowflake objects not fully compatible with Terraform yet (e.g. tables, network rules, external access integrations), SQL scripts are maintained in the /scripts directory.
+- For Snowflake objects not yet managed by Terraform (tables, seed DML, network rules, external access integrations, and Python stored procedures), SQL/Python scripts are maintained in the `scripts/` directory, grouped by object type (`ddl/`, `dml/`, `network/`, `procs/`).
 
 ---
 
@@ -18,7 +18,7 @@ The guiding rule: **all Snowflake objects are created via code, never via Snowsi
 ├── terraform/                  # Infrastructure as code — Snowflake account objects
 │   ├── README.md               # Full Terraform guide (modules, HCP workspaces, apply order)
 │   ├── modules/                # Reusable building blocks
-│   │   ├── database/           #   a database + its RAW/STAGING/MARTS/PRESENTATION schemas
+│   │   ├── database/           #   a database + its RAW/STAGING/MARTS/PRESENTATION/ADMIN schemas
 │   │   ├── warehouse/          #   a warehouse with size/auto-suspend settings
 │   │   ├── role/               #   account-level custom roles (ENGINEER, ANALYST)
 │   │   └── grants/             #   privilege grants + role-to-user memberships
@@ -32,8 +32,11 @@ The guiding rule: **all Snowflake objects are created via code, never via Snowsi
 │   ├── profiles.yml            # Reads credentials from env vars (safe to commit)
 │   ├── packages.yml
 │   └── models/                 # Add staging/ and marts/ as you build
-├── scripts/
-│   └── setup_snowflake.py      # Legacy provisioning script — superseded by Terraform
+├── scripts/                    # SQL/Python for objects not yet managed by Terraform
+│   ├── ddl/                    #   table definitions (ingestion metadata, USGS landing + staging)
+│   ├── dml/                    #   seed/merge data (e.g. INGESTION_METADATA config rows)
+│   ├── network/                #   network rules + external access integration (USGS API egress)
+│   └── procs/                  #   Python stored procedures (USGS earthquake ingestion)
 ├── .github/
 │   └── workflows/
 │       ├── terraform.yml       # PR: fmt/validate/plan (all envs); merge: gated apply
@@ -164,13 +167,21 @@ on every PR (posting the plan as a PR comment) and, on merge to `main`, applies 
 
 ### 6. Run dbt
 
+dbt reads its connection settings from environment variables but does **not** load `.env`
+itself. Load it with `uv run --env-file` so the variables are present in dbt's process:
+
 ```powershell
-uv run dbt compile --profiles-dir dbt
-uv run dbt run --profiles-dir dbt
-uv run dbt test --profiles-dir dbt
+uv run --env-file .env dbt debug --project-dir dbt --profiles-dir dbt
+uv run --env-file .env dbt build --project-dir dbt --profiles-dir dbt
 ```
 
-Set `DBT_TARGET=prod` in `.env` to target PROD locally (use with care).
+`dbt debug` confirms the profile resolved and the connection works before you build anything.
+Select the environment with `DBT_TARGET` (`dev` | `test` | `prod`) in `.env`, or override per
+command with `--target` (use `prod` with care):
+
+```powershell
+uv run --env-file .env dbt build --project-dir dbt --profiles-dir dbt --target test
+```
 
 ### 7. GitHub Actions secrets and branch protection
 
