@@ -1,0 +1,57 @@
+version: 2
+
+models:
+  - name: stg_earthquake__event_classification
+    description: >
+      Staging model over the USGS earthquake source, selecting the core event
+      attributes used downstream: seismic event type, magnitude-measurement
+      method, magnitude, and event time.
+      Grain: one row per source event (inherited from usgs_earthquake.earthquakes).
+
+    columns:
+      - name: TYPE
+        description: Type of seismic event (e.g. earthquake, quarry blast, explosion).
+        data_tests:
+          - not_null
+
+      - name: MAGTYPE
+        description: Magnitude-measurement method code (e.g. mww, mb, ml).
+        data_tests:
+          - not_null
+
+      - name: MAG
+        description: Measured magnitude of the event on its reported scale.
+        data_tests:
+          - not_null
+
+      - name: TIME
+        description: Event origin time (epoch milliseconds, UTC) from the USGS source.
+        data_tests:
+          - not_null
+
+  - name: stg_earthquake__location
+    description: >
+      Staging model over the USGS earthquake source, selecting the location
+      attributes of each event: human-readable place, latitude, longitude, and
+      event time.
+
+    columns:
+      - name: PLACE
+        description: Human-readable description of the event location (e.g. "10km NE of Ridgecrest, CA").
+        data_tests:
+          - not_null
+
+      - name: LATITUDE
+        description: Latitude of the event epicentre, in decimal degrees.
+        data_tests:
+          - not_null
+
+      - name: LONGITUDE
+        description: Longitude of the event epicentre, in decimal degrees.
+        data_tests:
+          - not_null
+
+      - name: TIME
+        description: Event origin time (epoch milliseconds, UTC) from the USGS source.
+        data_tests:
+          - not_null

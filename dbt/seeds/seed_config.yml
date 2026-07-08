@@ -1,0 +1,32 @@
+version: 2
+seeds:
+  - name: magnitude_types
+    description: >
+      Mapping of magnitude-method codes to human-readable descriptions.
+    columns:
+      - name: MAGNITUDE_TYPE_CODE
+        description: Lowercase, trimmed magnitude-method code (e.g. mww, mb, ml).
+        data_tests:
+          - not_null
+          
+      - name: MAGNITUDE_TYPE_DESC
+        description: Human-readable magnitude method.
+        data_tests:
+          - not_null
+
+  - name: us_state_codes
+    description: >
+      Mapping of US state codes to human-readable state names.
+    columns:
+      - name: STATE_NAME
+        description: Human-readable US state name.
+        data_tests:
+          - not_null
+          - unique
+
+      - name: STATE_CODE
+        description: Uppercase, trimmed US state code (e.g. CA, NY, TX).
+        data_tests:
+          - not_null
+          - unique
+          

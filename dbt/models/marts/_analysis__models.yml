@@ -1,0 +1,173 @@
+version: 2
+
+models:
+  - name: dim_event_classification
+    description: >
+      Event-classification dimension for USGS earthquakes. One row per source
+      event, carrying seismic event type, magnitude-measurement method, and a
+      qualitative magnitude band. Built on stg_earthquake__event_classification.
+    config:
+      materialized: table
+      schema: marts
+      tags: ['analysis', 'dimension']
+    columns:
+      - name: EVENT_KEY
+        description: Surrogate key for the event classification. Primary key of this dimension.
+        data_tests:
+          - not_null
+          - unique
+
+      - name: EVENT_TYPE
+        description: Type of seismic event (e.g. earthquake, quarry blast, explosion).
+        data_tests:
+          - not_null
+
+      - name: MAGNITUDE_TYPE_CODE
+        description: Uppercased, trimmed magnitude-method code (e.g. MWW, MB, ML).
+        data_tests:
+          - not_null
+          # ties the code back to your seed lookup — remove if the seed join isn't in place yet
+          - relationships:
+              to: ref('magnitude_types')
+              field: magnitude_code
+
+      - name: MAGNITUDE_TYPE_DESC
+        description: >
+          Human-readable magnitude method. NULL when the code is not one of the
+          mapped values.
+
+      - name: MAGNITUDE_BAND
+        description: Qualitative magnitude band. NULL for magnitudes outside 5.0–9.9.
+        data_tests:
+          - accepted_values:
+              values: ['Moderate', 'Strong', 'Major', 'Great', 'Extreme']
+
+      - name: DWH_CREATE_TIMESTAMP
+        description: UTC timestamp when this row was built by dbt.
+        data_tests:
+          - not_null
+
+  - name: dim_date
+    description: >
+      Calendar date dimension. One row per day, generated from a date spine,
+      with ISO calendar attributes and audit timestamps.
+      Grain: one row per calendar date.
+    config:
+      materialized: table
+      schema: marts
+      tags: ['analysis', 'dimension']
+    columns:
+      - name: DATE_KEY
+        description: Calendar date. Primary key of the dimension.
+        data_tests:
+          - not_null
+          - unique
+
+      - name: DAY_OF_MONTH
+        description: Day of the month, 1-31.
+        data_tests:
+          - not_null
+
+      - name: DAY_NAME
+        description: Full weekday name, Monday … Sunday.
+        data_tests:
+          - not_null
+
+      - name: DAY_OF_WEEK_ISO
+        description: ISO day of week, 1 = Monday … 7 = Sunday.
+        data_tests:
+          - not_null
+
+      - name: IS_WEEKEND
+        description: True for Saturday and Sunday.
+        data_tests:
+          - not_null
+
+      - name: ISO_WEEK
+        description: ISO week number.
+        data_tests:
+          - not_null
+
+      - name: MONTH_NUMBER
+        description: Month number, 1-12.
+        data_tests:
+          - not_null
+
+      - name: MONTH_NAME
+        description: Full month name, January … December.
+        data_tests:
+          - not_null
+
+      - name: QUARTER
+        description: Calendar quarter, 1-4.
+        data_tests:
+          - not_null
+
+      - name: YEAR
+        description: Calendar year.
+        data_tests:
+          - not_null
+
+      - name: YEAR_MONTH
+        description: YYYY-MM for easy grouping.
+        data_tests:
+          - not_null
+
+      - name: DWH_CREATE_TIMESTAMP
+        description: Row creation timestamp (UTC).
+        data_tests:
+          - not_null
+
+  - name: dim_location
+    description: >
+      Location dimension for USGS earthquake events. Region and country are
+      derived from the free-text place via AI_EXTRACT; hemispheres are derived
+      from latitude/longitude. SCD Type 2 grain: one current row per location.
+      Built on stg_earthquake__location.
+    config:
+      materialized: table
+      schema: marts
+      tags: ['analysis', 'dimension']
+    columns:
+      - name: LOCATION_KEY
+        description: Surrogate key hashed from the place text. Primary key of this dimension.
+        data_tests:
+          - not_null
+          - unique
+
+      - name: LOCATION
+        description: Human-readable place description from the USGS source (e.g. "10km NE of Ridgecrest, CA").
+        data_tests:
+          - not_null
+
+      - name: REGION
+        description: >
+          Region, province, or city extracted from the place text via AI_EXTRACT.
+          NULL when the place is too vague (e.g. an ocean or a general direction).
+
+      - name: COUNTRY
+        description: >
+          Country extracted from the place text via AI_EXTRACT. NULL when no
+          recognised country name is present.
+
+      - name: LAT_HEMISPHERE
+        description: Latitude hemisphere — N (north) or S (south). NULL on the equator (latitude = 0).
+        data_tests:
+          - accepted_values:
+              values: ['N', 'S']
+
+      - name: LON_HEMISPHERE
+        description: Longitude hemisphere — E (east) or W (west). NULL on the prime/antimeridian (longitude = 0).
+        data_tests:
+          - accepted_values:
+              values: ['E', 'W']
+
+      - name: ROW_EFFECTIVE_DATE
+        description: Timestamp from which this location record is effective (derived from the event time).
+        data_tests:
+          - not_null
+
+      - name: ROW_EXPIRY_DATE
+        description: Timestamp until which this record is effective; 9999-12-31 for the current record.
+        data_tests:
+          - not_null
