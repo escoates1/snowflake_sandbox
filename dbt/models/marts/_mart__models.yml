@@ -42,6 +42,16 @@ models:
           - accepted_values:
               values: ['Moderate', 'Strong', 'Major', 'Great', 'Extreme']
 
+      - name: ROW_EFFECTIVE_DATE
+        description: Timestamp from which this event classification record is effective (derived from the event time).
+        data_tests:
+          - not_null
+
+      - name: ROW_EXPIRY_DATE
+        description: Timestamp until which this record is effective; 9999-12-31 for the current record.
+        data_tests:
+          - not_null
+
       - name: DWH_CREATE_TIMESTAMP
         description: UTC timestamp when this row was built by dbt.
         data_tests:

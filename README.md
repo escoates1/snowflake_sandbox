@@ -28,10 +28,14 @@ The guiding rule: **all Snowflake objects are created via code, never via Snowsi
 │       ├── test/               #   DWH_TEST database + WH_TEST warehouse + grants
 │       └── prod/               #   DWH_PROD database + WH_PROD warehouse + grants
 ├── dbt/                        # dbt project
-│   ├── dbt_project.yml
+│   ├── dbt_project.yml         # Model + seed configs (schemas, materializations, column types)
 │   ├── profiles.yml            # Reads credentials from env vars (safe to commit)
-│   ├── packages.yml
-│   └── models/                 # Add staging/ and marts/ as you build
+│   ├── packages.yml            # dbt_utils
+│   ├── macros/                 # generate_schema_name override (+schema used verbatim)
+│   ├── seeds/                  # magnitude_types.csv lookup
+│   └── models/
+│       ├── staging/            # source defs + staging models over the RAW USGS landing table
+│       └── marts/              # analysis dimensions (dim_date, dim_event_classification, dim_location)
 ├── scripts/                    # SQL/Python for objects not yet managed by Terraform
 │   ├── ddl/                    #   table definitions (ingestion metadata, USGS landing + staging)
 │   ├── dml/                    #   seed/merge data (e.g. INGESTION_METADATA config rows)
@@ -64,6 +68,36 @@ For simplicity in a sandbox environment, the below roles have access across all 
 
 The roles themselves are created once in the **`account`** environment; each of `dev`/`test`
 then grants those roles privileges on its own database and assigns them to users.
+
+---
+
+## dbt data model
+
+dbt builds a small dimensional model on top of the USGS earthquake data that the ingestion
+stored procedure lands in `RAW`. The layers:
+
+- **Sources** (`models/staging/_src_earthquake.yml`) — declares `usgs_earthquake.earthquakes`
+  over `RAW.USGS_EARTHQUAKES_FDSNWS`, with a freshness check.
+- **Staging** (`models/staging/`) — thin models that select and rename source columns:
+  - `stg_earthquake__event_classification` — `TYPE`, `MAGTYPE`, `MAG`, `TIME`.
+  - `stg_earthquake__location` — `PLACE`, `LATITUDE`, `LONGITUDE`, `TIME`.
+- **Marts** (`models/marts/`) — analysis dimensions:
+  - `dim_date` — calendar dimension generated with `dbt_utils.date_spine`.
+  - `dim_event_classification` — event type and magnitude-method classification.
+  - `dim_location` — region/country extracted from the free-text place via `AI_EXTRACT`,
+    hemispheres from latitude/longitude, and a manual SCD Type 2 effective/expiry pattern;
+    the surrogate key uses `dbt_utils.generate_surrogate_key`.
+
+Supporting pieces:
+
+- **Seeds** — `seeds/magnitude_types.csv`, a magnitude-code → description lookup.
+- **Packages** — `dbt_utils` (`date_spine`, `generate_surrogate_key`).
+- **Schema naming** — a custom `macros/generate_schema_name.sql` makes `+schema` use the
+  configured name verbatim, so models land in `STAGING`/`MARTS` (not `<target>_<schema>`).
+- **Tests** — generic tests in the `_*.yml` property files: `not_null`, `unique`,
+  `accepted_values`, and `relationships` (e.g. magnitude code → the `magnitude_types` seed).
+
+Build everything (models, seeds, tests) with `dbt build` — see step 6 below.
 
 ---
 

@@ -55,3 +55,40 @@ models:
         description: Event origin time (epoch milliseconds, UTC) from the USGS source.
         data_tests:
           - not_null
+
+  - name: stg_earthquake__alert_status
+    description: >
+      Staging model over the USGS earthquake source, selecting alerting and
+      review-status attributes: PAGER alert level, review status, tsunami flag,
+      felt-report count, and event time.
+
+    columns:
+      - name: ALERT
+        description: >
+          PAGER alert level (green, yellow, orange, red). NULL when no alert
+          was issued for the event.
+        data_tests:
+          - accepted_values:
+              values: ['green', 'yellow', 'orange', 'red']
+
+      - name: STATUS
+        description: Review status of the event — automatic or reviewed.
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: ['automatic', 'reviewed']
+
+      - name: TSUNAMI
+        description: Tsunami flag — 1 for events in oceanic regions that may generate a tsunami, else 0.
+        data_tests:
+          - not_null
+          - accepted_values:
+              values: [0, 1]
+
+      - name: FELT
+        description: Number of "Did You Feel It?" reports. NULL when there are none.
+
+      - name: TIME
+        description: Event origin time (epoch milliseconds, UTC) from the USGS source.
+        data_tests:
+          - not_null
