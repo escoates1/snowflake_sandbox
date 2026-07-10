@@ -152,3 +152,49 @@ models:
         data_tests:
           - accepted_values:
               values: ['E', 'W']
+
+  - name: dim_alert_status_view
+    identifier: dim_alert_status
+    description: >
+      Alert-status dimension for USGS earthquake events, covering PAGER alert
+      severity, human-review status, tsunami association, and felt reports.
+    config:
+      materialized: view
+      schema: presentation
+      tags: ['analysis', 'dimension']
+    columns:
+      - name: ALERT_STATUS_KEY
+        description: >
+          Surrogate key hashed from pager alert level, tsunami flag, and
+          felt-by-human flag. Primary key of this dimension.
+        data_tests:
+          - not_null
+          - unique
+
+      - name: PAGER_ALERT_LEVEL
+        description: Raw USGS PAGER alert level (green, yellow, orange, red). NULL when not provided by the source.
+
+      - name: PAGER_ALERT_RANK
+        description: >
+          Numeric severity rank derived from PAGER_ALERT_LEVEL (1 = green … 4 = red).
+          NULL when the level isn't one of the four recognised values.
+
+      - name: REVIEWED_BY_HUMAN_FLAG
+        description: >
+          Y when the alert status was human-reviewed, N when automatic.
+          NULL when the source status is neither.
+        data_tests:
+          - accepted_values:
+              values: ['Y', 'N']
+
+      - name: TSUNAMI_FLAG
+        description: Y when a tsunami was associated with the event, N otherwise.
+        data_tests:
+          - accepted_values:
+              values: ['Y', 'N']
+
+      - name: FELT_BY_HUMAN_FLAG
+        description: Y when at least one person reported feeling the event, N otherwise.
+        data_tests:
+          - accepted_values:
+              values: ['Y', 'N']

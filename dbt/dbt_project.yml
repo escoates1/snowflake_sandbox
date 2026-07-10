@@ -16,6 +16,10 @@ models:
     marts:
       +schema: marts
       +materialized: table
+      +transient: false
+    presentation:
+      +schema: presentation
+      +materialized: view
 
 seeds:
   snowflake_sandbox:
