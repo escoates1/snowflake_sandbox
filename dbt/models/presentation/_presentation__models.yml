@@ -274,7 +274,7 @@ models:
         description: Compass direction from the named place, parsed from the free-text location (e.g. "NE").
 
       - name: DISTANCE_FROM_PLACE_KM
-        description: Distance from the named place, parsed from the free-text location (e.g. "10 km").
+        description: Distance from the named place, parsed from the free-text location (e.g. "12 km").
 
       - name: FELT_COUNT
         description: Number of "Did You Feel It?" responses submitted for the event by people.
