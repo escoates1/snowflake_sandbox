@@ -1,0 +1,117 @@
+name: dbt
+
+# ──────────────────────────────────────────────────────────────────────────
+# WHEN THIS RUNS
+#   • PR to main    -> validate-dev only: `dbt build` against DEV.
+#   • Push to main  -> deploy-test, then (gated) deploy-prod. Dev is NOT
+#     rebuilt here — it was already proven in validate-dev before merge.
+# Path-filtered so it's skipped when only terraform/ or scripts/ changed.
+# ──────────────────────────────────────────────────────────────────────────
+on:
+  pull_request:
+    branches: [main]
+    paths: ["dbt/**", ".github/workflows/dbt.yml"]
+  push:
+    branches: [main]
+    paths: ["dbt/**", ".github/workflows/dbt.yml"]
+
+concurrency:
+  group: dbt-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # Runs on every PR. Builds + tests every model against the shared DEV
+  # schema. Branch protection should require this check before merge.
+  validate-dev:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dbt
+    env:
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+      SNOWFLAKE_PRIVATE_KEY_PATH: /tmp/rsa_key.p8
+      SNOWFLAKE_WAREHOUSE: COMPUTE_WH
+      DBT_TARGET: dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync
+
+      - name: Write private key
+        run: echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY }}" | base64 -d > /tmp/rsa_key.p8
+
+      - run: uv run dbt deps --profiles-dir .
+
+      - name: dbt build (DEV)
+        run: uv run dbt build --profiles-dir .
+
+  # Runs only on push to main. Deploys TEST first; pauses for manual
+  # approval if the `snowflake-test` GitHub Environment requires a reviewer.
+  deploy-test:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: snowflake-test
+    defaults:
+      run:
+        working-directory: dbt
+    env:
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+      SNOWFLAKE_PRIVATE_KEY_PATH: /tmp/rsa_key.p8
+      SNOWFLAKE_WAREHOUSE: COMPUTE_WH
+      DBT_TARGET: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync
+
+      - name: Write private key
+        run: echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY }}" | base64 -d > /tmp/rsa_key.p8
+
+      - run: uv run dbt deps --profiles-dir .
+
+      - name: dbt build (TEST)
+        run: uv run dbt build --profiles-dir .
+
+  # Only starts after deploy-test succeeds. Pauses for manual approval if
+  # the `snowflake-prod` GitHub Environment requires a reviewer.
+  deploy-prod:
+    needs: deploy-test
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: snowflake-prod
+    defaults:
+      run:
+        working-directory: dbt
+    env:
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+      SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+      SNOWFLAKE_PRIVATE_KEY_PATH: /tmp/rsa_key.p8
+      SNOWFLAKE_WAREHOUSE: COMPUTE_WH
+      DBT_TARGET: prod
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync
+
+      - name: Write private key
+        run: echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY }}" | base64 -d > /tmp/rsa_key.p8
+
+      - run: uv run dbt deps --profiles-dir .
+
+      - name: dbt build (PROD)
+        run: uv run dbt build --profiles-dir .
