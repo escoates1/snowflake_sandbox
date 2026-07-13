@@ -1,0 +1,301 @@
+version: 2
+
+models:
+  - name: dim_event_classification_view
+    identifier: dim_event_classification
+    description: >
+      Event-classification dimension for USGS earthquakes. One row per source
+      event, carrying seismic event type, magnitude-measurement method, and a
+      qualitative magnitude band.
+    config:
+      materialized: view
+      schema: presentation
+      tags: ['analysis', 'dimension']
+    columns:
+      - name: EVENT_CLASS_KEY
+        description: Surrogate key for the event classification. Primary key of this dimension.
+        data_tests:
+          - not_null
+          - unique
+
+      - name: EVENT_TYPE
+        description: Type of seismic event (e.g. earthquake, quarry blast, explosion).
+        data_tests:
+          - not_null
+
+      - name: MAGNITUDE_TYPE_CODE
+        description: Uppercased, trimmed magnitude-method code (e.g. MWW, MB, ML).
+        data_tests:
+          - not_null
+
+      - name: MAGNITUDE_TYPE_DESC
+        description: >
+          Human-readable magnitude method. NULL when the code is not one of the
+          mapped values.
+
+      - name: MAGNITUDE_BAND
+        description: Qualitative magnitude band. NULL for magnitudes outside 5.0–9.9.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Moderate', 'Strong', 'Major', 'Great', 'Extreme']
+
+  - name: dim_date_view
+    identifier: dim_date
+    description: >
+      Calendar date dimension. One row per day, generated from a date spine,
+      with ISO calendar attributes and audit timestamps.
+    config:
+      materialized: view
+      schema: presentation
+      tags: ['analysis', 'dimension']
+    columns:
+      - name: DATE_KEY
+        description: Calendar date. Primary key of the dimension.
+        data_tests:
+          - not_null
+          - unique
+
+      - name: DAY_OF_MONTH
+        description: Day of the month, 1-31.
+        data_tests:
+          - not_null
+
+      - name: DAY_NAME
+        description: Full weekday name, Monday … Sunday.
+        data_tests:
+          - not_null
+
+      - name: DAY_OF_WEEK_ISO
+        description: ISO day of week, 1 = Monday … 7 = Sunday.
+        data_tests:
+          - not_null
+
+      - name: IS_WEEKEND
+        description: True for Saturday and Sunday.
+        data_tests:
+          - not_null
+
+      - name: ISO_WEEK
+        description: ISO week number.
+        data_tests:
+          - not_null
+
+      - name: MONTH_NUMBER
+        description: Month number, 1-12.
+        data_tests:
+          - not_null
+
+      - name: MONTH_NAME
+        description: Full month name, January … December.
+        data_tests:
+          - not_null
+
+      - name: QUARTER
+        description: Calendar quarter, 1-4.
+        data_tests:
+          - not_null
+
+      - name: YEAR
+        description: Calendar year.
+        data_tests:
+          - not_null
+
+      - name: YEAR_MONTH
+        description: YYYY-MM for easy grouping.
+        data_tests:
+          - not_null
+
+  - name: dim_location_view
+    identifier: dim_location
+    description: >
+      Location dimension for USGS earthquake events. Region and country are
+      derived from the free-text place via AI_EXTRACT; hemispheres are derived
+      from latitude/longitude. SCD Type 2 grain: one current row per location.
+    config:
+      materialized: view
+      schema: presentation
+      tags: ['analysis', 'dimension']
+    columns:
+      - name: LOCATION_KEY
+        description: Surrogate key hashed from the place text. Primary key of this dimension.
+        data_tests:
+          - not_null
+          - unique
+
+      - name: LOCATION
+        description: Human-readable place description from the USGS source (e.g. "10km NE of Ridgecrest, CA").
+        data_tests:
+          - not_null
+
+      - name: REGION
+        description: >
+          Region, province, or city extracted from the place text via AI_EXTRACT.
+          NULL when the place is too vague (e.g. an ocean or a general direction).
+
+      - name: COUNTRY
+        description: >
+          Country extracted from the place text via AI_EXTRACT. NULL when no
+          recognised country name is present.
+
+      - name: LAT_HEMISPHERE
+        description: Latitude hemisphere — N (north) or S (south). NULL on the equator (latitude = 0).
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['N', 'S']
+
+      - name: LON_HEMISPHERE
+        description: Longitude hemisphere — E (east) or W (west). NULL on the prime/antimeridian (longitude = 0).
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['E', 'W']
+
+  - name: dim_alert_status_view
+    identifier: dim_alert_status
+    description: >
+      Alert-status dimension for USGS earthquake events, covering PAGER alert
+      severity, human-review status, tsunami association, and felt reports.
+    config:
+      materialized: view
+      schema: presentation
+      tags: ['analysis', 'dimension']
+    columns:
+      - name: ALERT_STATUS_KEY
+        description: >
+          Surrogate key hashed from pager alert level, tsunami flag, and
+          felt-by-human flag. Primary key of this dimension.
+        data_tests:
+          - not_null
+          - unique
+
+      - name: PAGER_ALERT_LEVEL
+        description: Raw USGS PAGER alert level (green, yellow, orange, red). NULL when not provided by the source.
+
+      - name: PAGER_ALERT_RANK
+        description: >
+          Numeric severity rank derived from PAGER_ALERT_LEVEL (1 = green … 4 = red).
+          NULL when the level isn't one of the four recognised values.
+
+      - name: REVIEWED_BY_HUMAN_FLAG
+        description: >
+          Y when the alert status was human-reviewed, N when automatic.
+          NULL when the source status is neither.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Y', 'N']
+
+      - name: TSUNAMI_FLAG
+        description: Y when a tsunami was associated with the event, N otherwise.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Y', 'N']
+
+      - name: FELT_BY_HUMAN_FLAG
+        description: Y when at least one person reported feeling the event, N otherwise.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['Y', 'N']
+
+  - name: fact_seismic_event_view
+    identifier: fact_seismic_event
+    description: >
+      Seismic event fact table for USGS earthquakes, with foreign keys to the
+      date, location, event-classification, and alert-status dimensions plus
+      event-level metrics.
+    config:
+      materialized: view
+      schema: presentation
+      tags: ['analysis', 'fact']
+    columns:
+      - name: EVENT_KEY
+        description: Surrogate key hashed from EVENT_ID. Primary key of this fact table.
+        data_tests:
+          - not_null
+          - unique
+
+      - name: EVENT_ID
+        description: Natural key of the seismic event from the USGS source.
+        data_tests:
+          - not_null
+
+      - name: DATE_KEY
+        description: Foreign key to dim_date_view — calendar date the event occurred (UTC).
+        data_tests:
+          - not_null
+
+      - name: LOCATION_KEY
+        description: Foreign key to dim_location_view, hashed from the free-text place description.
+        data_tests:
+          - not_null
+
+      - name: EVENT_CLASS_KEY
+        description: >
+          Foreign key to dim_event_classification_view, hashed from event type,
+          magnitude type code, and magnitude band.
+        data_tests:
+          - not_null
+
+      - name: ALERT_STATUS_KEY
+        description: >
+          Foreign key to dim_alert_status_view, hashed from pager alert level,
+          tsunami flag, and felt-by-human flag.
+        data_tests:
+          - not_null
+
+      - name: EVENT_TIMESTAMP
+        description: UTC timestamp the event occurred, converted from the source epoch-millisecond time.
+        data_tests:
+          - not_null
+
+      - name: EVENT_URL
+        description: USGS human-readable event page URL.
+
+      - name: DETAIL_URL
+        description: USGS detail feed URL for this event.
+
+      - name: LATITUDE
+        description: Event latitude in decimal degrees.
+
+      - name: LONGITUDE
+        description: Event longitude in decimal degrees.
+
+      - name: DEPTH_IN_KM
+        description: Depth of the event below the surface, in kilometers.
+
+      - name: MAGNITUDE
+        description: Event magnitude, measured per the method recorded on dim_event_classification_view (MAGNITUDE_TYPE_CODE).
+
+      - name: DIRECTION_FROM_PLACE
+        description: Compass direction from the named place, parsed from the free-text location (e.g. "NE").
+
+      - name: DISTANCE_FROM_PLACE_KM
+        description: Distance from the named place, parsed from the free-text location (e.g. "10 km").
+
+      - name: FELT_COUNT
+        description: Number of "Did You Feel It?" responses submitted for the event.
+
+      - name: CDI_MAX
+        description: Maximum reported Community Determined Intensity.
+
+      - name: MMI_MAX
+        description: Maximum estimated Modified Mercalli Intensity.
+
+      - name: SIGNIFICANCE
+        description: USGS significance score for the event.
+
+      - name: NUM_STATIONS
+        description: Number of seismic stations used to determine the event location.
+
+      - name: DMIN_DEG
+        description: Horizontal distance from the epicenter to the nearest station, in degrees.
+
+      - name: RMS_SEC
+        description: Root-mean-square travel time residual, in seconds.
+
+      - name: AZIMUTHAL_GAP_DEG
+        description: Largest azimuthal gap between azimuthally adjacent stations, in degrees.

@@ -1,0 +1,19 @@
+MAGNITUDE_TYPE_CODE,MAGNITUDE_TYPE_DESC
+mww,moment W-phase
+mwc,centroid
+mwb,body wave
+mwr,regional
+ms20,20-second surface wave
+ms,20-second surface wave
+mb,short-period body wave
+mfa,felt-area magnitude
+ml,local
+mb_lg,short-period surface wave
+mlg,short-period surface wave
+md,duration
+mi,integrated p-wave
+mwp,integrated p-wave
+me,energy
+finite fault,modelling
+mint,intensity magnitude
+mw,moment

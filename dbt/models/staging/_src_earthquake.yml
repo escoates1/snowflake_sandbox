@@ -1,0 +1,13 @@
+version: 2
+
+sources:
+  - name: usgs_earthquake
+    database: "{{ target.database }}"
+    schema: RAW
+    tables:
+      - name: earthquakes
+        description: USGC Earthquake FDSNWS landing table containing all batches.
+        identifier: USGS_EARTHQUAKES_FDSNWS
+        loaded_at_field: DWH_CREATE_TIMESTAMP
+        freshness:
+          warn_after: {count: 24, period: hour}

@@ -8,7 +8,7 @@ You are a data engineering teacher. When answering a question or giving a soluti
 
 Do not make code changes directly in the project unless asked explicitly to do so. Instead, output the answers in the terminal and let me implement them myself.
 
-Keep the CLAUDE.md file up to date as the project evolves.
+Keep the CLAUDE.md file up to date as the project evolves. Add all architectural decisions to the main README.md file so they are readable from the GitHub repo.
 
 ## Stack
 
@@ -21,15 +21,16 @@ Keep the CLAUDE.md file up to date as the project evolves.
 
 ## Architecture decisions
 
-- One Snowflake account, per-environment databases (`DWH_DEV`, `DWH_TEST`, `DWH_PROD`) with matching schemas (`RAW`, `STAGING`, `MARTS`, `PRESENTATION`).
-- **Terraform provisions all account objects** (databases, schemas, roles, warehouses), replacing `scripts/setup_snowflake.py` (kept for reference only). dbt builds models on top.
+- One Snowflake account, per-environment databases (`DWH_DEV`, `DWH_TEST`, `DWH_PROD`) with matching schemas (`RAW`, `STAGING`, `MARTS`, `PRESENTATION`, `ADMIN`).
+- **Terraform provisions all account objects** (databases, schemas, roles, warehouses); dbt builds models on top. SQL/Python for objects Terraform doesn't yet manage (tables, seed DML, network rules, external access integrations, stored procedures) lives in `scripts/`, grouped by object type.
+- **dbt models are layered**: sources (`_src_earthquake.yml` over `RAW.USGS_EARTHQUAKES_FDSNWS`) → **staging** (`stg_earthquake__event_classification`, `stg_earthquake__location` — light select/rename) → **marts** analysis dimensions (`dim_date`, `dim_event_classification`, `dim_location`). Static lookups live in seeds (`magnitude_types`); `dbt_utils` supplies `date_spine` and `generate_surrogate_key`; `dim_location` derives region/country from free-text place via `AI_EXTRACT` and applies a manual SCD Type 2 pattern. A custom `generate_schema_name` macro makes `+schema` use the configured name verbatim, so models land in `STAGING`/`MARTS` (not `<target>_<schema>`).
 - Terraform is structured as one directory **per environment** (`terraform/environments/{account,dev,test,prod}`) that calls shared `terraform/modules/*`. The **`account`** environment creates account-wide objects (the custom roles); **`dev`**/**`test`**/**`prod`** each create a database + warehouse and grant the roles. `account` must be applied before the database environments.
 - **State lives in HCP Terraform**, one workspace per environment (org `escoates1-org`; workspaces `snowflake-sandbox-{account,dev,test}`), configured via a `cloud {}` block in each env's `versions.tf`. Workspaces use **Local execution mode** — state is stored/locked remotely, but runs happen on the local machine so the provider can read the local private-key file. (See `terraform/README.md`.)
 - Terraform authenticates as a dedicated **`TERRAFORM_USER`** service account via key-pair (JWT), with roles `SYSADMIN` (objects) and `SECURITYADMIN` (roles/grants) — not the personal login. `providers.tf` declares two providers: the default (`SYSADMIN`) and an aliased `securityadmin`.
 - Terraform connection values are supplied locally (Local execution mode) via a gitignored `terraform.tfvars` **or** `TF_VAR_*` environment variables; no secrets in `.tf` files. The account id splits into `organization_name` + `account_name`; HCL paths use forward slashes.
 - Key-pair auth for all non-interactive connections (CI/CD and local dev after initial setup)
-- `dbt/profiles.yml` is committed — it contains no secrets, reads everything from env vars
-- Run dbt commands with `--profiles-dir dbt` (or `--profiles-dir .` from inside `dbt/`) so the committed profile is used rather than `~/.dbt/profiles.yml`
+- `dbt/profiles.yml` is committed — it contains no secrets, reads everything from env vars; three targets (`dev`/`test`/`prod`) selected by `DBT_TARGET`, connecting role pinned via `SNOWFLAKE_ROLE` (default `ENGINEER`)
+- Run dbt commands from the repo root with `--project-dir dbt --profiles-dir dbt` (or from inside `dbt/` with `--profiles-dir .`) so the committed project and profile are used rather than `~/.dbt/profiles.yml`. dbt does **not** load `.env` itself — load it with `uv run --env-file .env <dbt command>`
 - `ruff` is a dev dependency (`[dependency-groups]` in pyproject.toml), installed by default with `uv sync`
 
 ## Repository layout
@@ -43,12 +44,20 @@ terraform/                   — infrastructure as code for Snowflake account ob
     dev/                     — DWH_DEV + WH_DEV + grants; HCP state
     test/                    — DWH_TEST + WH_TEST + grants; HCP state
     prod/                    — DWH_PROD + WH_PROD + grants; HCP state
-scripts/setup_snowflake.py   — legacy provisioning script; superseded by Terraform
+scripts/                     — SQL/Python for objects not yet managed by Terraform
+  ddl/                       — table definitions (INGESTION_METADATA, USGS landing + staging)
+  dml/                       — seed/merge data (INGESTION_METADATA config rows)
+  network/                   — network rules + external access integration (USGS API egress)
+  procs/                     — Python stored procedures (USGS earthquake ingestion)
 dbt/                         — dbt project
-  dbt_project.yml
+  dbt_project.yml            — model + seed configs (schemas, materializations, column types)
   profiles.yml               — env-var-based, safe to commit
-  packages.yml
-  models/                    — empty; add staging/ and marts/ subdirs as you build
+  packages.yml               — dbt_utils
+  macros/                    — generate_schema_name override (+schema used verbatim)
+  seeds/                     — magnitude_types.csv (magnitude code → description lookup)
+  models/
+    staging/                 — _src_earthquake.yml source + stg_earthquake__* staging models
+    marts/                   — dim_date, dim_event_classification, dim_location (+ _analysis__models.yml)
 .github/workflows/
   terraform.yml              — PR: fmt/validate/plan (all envs); merge: gated apply account→dev→test→prod
   ci.txt                     — (inactive .txt) ruff lint + dbt compile against DEV
@@ -70,10 +79,13 @@ dbt/                         — dbt project
 | `SNOWFLAKE_USER` | Snowflake username |
 | `SNOWFLAKE_PASSWORD` | Used only during initial setup before key-pair is configured |
 | `SNOWFLAKE_PRIVATE_KEY_PATH` | Path to `rsa_key.p8` (local) or `/tmp/rsa_key.p8` (CI) |
+| `SNOWFLAKE_ROLE` | Role dbt connects as; defaults to `ENGINEER` |
 | `SNOWFLAKE_WAREHOUSE` | Defaults to `COMPUTE_WH` |
-| `DBT_TARGET` | `dev` or `prod`; defaults to `dev` |
+| `DBT_TARGET` | `dev`, `test`, or `prod`; defaults to `dev` |
 
-`.env` drives **dbt and the legacy script**. **Terraform does not read `.env`.** Under Local
+`.env` drives **dbt** (and any SQL scripts you run manually). dbt does **not** load `.env`
+itself — load it with `uv run --env-file .env <dbt command>` so the variables are present in
+dbt's process. **Terraform does not read `.env`.** Under Local
 execution mode Terraform reads each environment's connection inputs (`organization_name`,
 `account_name`, `user`, `role`, `private_key_path`) from a gitignored `terraform.tfvars` **or**
 from `TF_VAR_*` environment variables. Keep these in sync with `.env` if the same identity is used
@@ -87,7 +99,11 @@ for both.
 
 ### Done
 
-- [x] Snowflake environment provisioning script (`scripts/setup_snowflake.py`) — now superseded by Terraform
+- [x] Snowflake environment provisioning script — superseded by Terraform and removed
+- [x] `scripts/` reorganised into `ddl/`/`dml/`/`network/`/`procs/` for objects Terraform doesn't yet manage
+- [x] `INGESTION_METADATA` control table (in `ADMIN`) + idempotent seed DML
+- [x] USGS Earthquake ingestion pipeline: landing + staging tables, egress network rules, external access integration, and a Python (Snowpark) stored proc with watermarking
+- [x] dbt `profiles.yml` extended to three targets (`dev`/`test`/`prod`) with a pinned connecting role
 - [x] dbt project scaffold with env-var-based profiles
 - [x] CI workflow: ruff lint + dbt compile against DEV (on PR to main)
 - [x] CD workflow: dbt run + dbt test against PROD (on merge to main)
@@ -100,6 +116,12 @@ for both.
 - [x] Migrated Terraform state to HCP Terraform (one workspace per environment, Local execution)
 - [x] `account`, `dev`, `test`, and `prod` environments all provisioned
 - [x] Terraform CI/CD (`terraform.yml`): fmt/validate/plan on PR (all envs, plan posted as PR comment); gated sequential apply (`account→dev→test→prod`) on merge
+- [x] dbt sources over the RAW USGS landing table with a freshness check (`_src_earthquake.yml`)
+- [x] Staging models: `stg_earthquake__event_classification`, `stg_earthquake__location`
+- [x] Analysis marts: `dim_date` (dbt_utils `date_spine`), `dim_event_classification`, `dim_location` (`AI_EXTRACT` region/country + manual SCD Type 2 + `generate_surrogate_key`)
+- [x] `magnitude_types` seed + `dbt_project.yml` seed config
+- [x] `dbt_utils` package added; custom `generate_schema_name` macro
+- [x] Generic tests across models (`not_null`, `unique`, `accepted_values`, `relationships`)
 
 ### Next / ideas to explore
 
@@ -108,9 +130,8 @@ for both.
 - [ ] Add a `snowflake_resource_monitor` to cap trial-account credit usage
 - [ ] Establish role hierarchy: grant custom roles up to `SYSADMIN`
 - [ ] Add `terraform test` coverage for the `grants` module (membership flattening)
-- [ ] Build first dbt model — a simple staging model over a raw source
-- [ ] Add dbt sources (`sources.yml`) and generic tests (`not_null`, `unique`)
-- [ ] Load sample data into `DWH_DEV.RAW` to have something to model
-- [ ] Explore dbt snapshots (SCD Type 2)
-- [ ] Add `dbt test` to the CI workflow once models exist
+- [ ] Replace the manual SCD Type 2 in `dim_location` with dbt snapshots
+- [ ] Wire `dbt build` + `dbt test` into the CI workflow now that models exist
+- [ ] Build a fact model joining staging events to `dim_date`/`dim_location`/`dim_event_classification`
+- [ ] Fix the `magnitude_types` seed column-config names (`dbt_project.yml` pins `MAGNITUDE_TYPE_CODE`/`MAGNITUDE_TYPE_DESC`, but the CSV headers are `magnitude_code`/`magnitude_description`)
 - [ ] Explore Snowflake features: dynamic tables, streams, tasks

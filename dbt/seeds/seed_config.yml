@@ -1,0 +1,15 @@
+version: 2
+seeds:
+  - name: magnitude_types
+    description: >
+      Mapping of magnitude-method codes to human-readable descriptions.
+    columns:
+      - name: MAGNITUDE_TYPE_CODE
+        description: Lowercase, trimmed magnitude-method code (e.g. mww, mb, ml).
+        data_tests:
+          - not_null
+          
+      - name: MAGNITUDE_TYPE_DESC
+        description: Human-readable magnitude method.
+        data_tests:
+          - not_null
