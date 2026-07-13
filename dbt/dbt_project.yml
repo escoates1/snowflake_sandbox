@@ -29,3 +29,6 @@ seeds:
         MAGNITUDE_TYPE_CODE: varchar(20)
         MAGNITUDE_TYPE_DESC: varchar(100)
 
+on-run-start:
+  - "{{ ingest_usgs_earthquakes() if flags.WHICH == 'build' }}"
+
