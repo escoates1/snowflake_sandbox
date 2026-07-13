@@ -2,35 +2,35 @@ name: dbt
 
 # ──────────────────────────────────────────────────────────────────────────
 # WHEN THIS RUNS
-#   • PR to main    -> validate-dev only: `dbt build` against DEV.
-#   • Push to main  -> deploy-test, then (gated) deploy-prod. Dev is NOT
-#     rebuilt here — it was already proven in validate-dev before merge.
-# Path-filtered so it's skipped when only terraform/ or scripts/ changed.
+#   • Push to main only, and only when dbt/** changed. There is no
+#     pull_request trigger — nothing in this file runs before a merge.
+#   • deploy-dev -> deploy-test -> deploy-prod run in strict sequence via
+#     `needs:`: each environment only starts after `dbt build` has
+#     succeeded in the previous one. deploy-test and deploy-prod are also
+#     tied to the `snowflake-test`/`snowflake-prod` GitHub Environments,
+#     so if those have required reviewers configured, each pauses for
+#     manual approval before it runs.
 # ──────────────────────────────────────────────────────────────────────────
 on:
-  pull_request:
-    branches: [main]
-    paths: ["dbt/**", ".github/workflows/dbt.yml"]
   push:
     branches: [main]
-    paths: ["dbt/**", ".github/workflows/dbt.yml"]
+    paths: ["dbt/**"]
 
 concurrency:
   group: dbt-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  # Runs on every PR. Builds + tests every model against the shared DEV
-  # schema. Branch protection should require this check before merge.
-  validate-dev:
-    if: github.event_name == 'pull_request'
+  # First stage of the chain — no `needs:`, this is the entry point.
+  # Builds + tests every model against the shared DEV schema.
+  deploy-dev:
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: dbt
     env:
-      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
-      SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT_IDENTIFIER }}
+      SNOWFLAKE_USER: ${{ secrets.DBT_SERVICE_ACCOUNT }}
       SNOWFLAKE_PRIVATE_KEY_PATH: /tmp/rsa_key.p8
       SNOWFLAKE_WAREHOUSE: COMPUTE_WH
       DBT_TARGET: dev
@@ -44,25 +44,25 @@ jobs:
       - run: uv sync
 
       - name: Write private key
-        run: echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY }}" | base64 -d > /tmp/rsa_key.p8
+        run: echo "${{ secrets.TERRAFORM_PRIVATE_KEY }}" | base64 -d > /tmp/rsa_key.p8
 
       - run: uv run dbt deps --profiles-dir .
 
       - name: dbt build (DEV)
         run: uv run dbt build --profiles-dir .
 
-  # Runs only on push to main. Deploys TEST first; pauses for manual
+  # Second stage — only starts after deploy-dev succeeds. Pauses for manual
   # approval if the `snowflake-test` GitHub Environment requires a reviewer.
   deploy-test:
-    if: github.event_name == 'push'
+    needs: deploy-dev
     runs-on: ubuntu-latest
     environment: snowflake-test
     defaults:
       run:
         working-directory: dbt
     env:
-      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
-      SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT_IDENTIFIER }}
+      SNOWFLAKE_USER: ${{ secrets.DBT_SERVICE_ACCOUNT }}
       SNOWFLAKE_PRIVATE_KEY_PATH: /tmp/rsa_key.p8
       SNOWFLAKE_WAREHOUSE: COMPUTE_WH
       DBT_TARGET: test
@@ -76,26 +76,25 @@ jobs:
       - run: uv sync
 
       - name: Write private key
-        run: echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY }}" | base64 -d > /tmp/rsa_key.p8
+        run: echo "${{ secrets.TERRAFORM_PRIVATE_KEY }}" | base64 -d > /tmp/rsa_key.p8
 
       - run: uv run dbt deps --profiles-dir .
 
       - name: dbt build (TEST)
         run: uv run dbt build --profiles-dir .
 
-  # Only starts after deploy-test succeeds. Pauses for manual approval if
-  # the `snowflake-prod` GitHub Environment requires a reviewer.
+  # Third stage — only starts after deploy-test succeeds. Pauses for manual
+  # approval if the `snowflake-prod` GitHub Environment requires a reviewer.
   deploy-prod:
     needs: deploy-test
-    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     environment: snowflake-prod
     defaults:
       run:
         working-directory: dbt
     env:
-      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
-      SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT_IDENTIFIER }}
+      SNOWFLAKE_USER: ${{ secrets.DBT_SERVICE_ACCOUNT }}
       SNOWFLAKE_PRIVATE_KEY_PATH: /tmp/rsa_key.p8
       SNOWFLAKE_WAREHOUSE: COMPUTE_WH
       DBT_TARGET: prod
@@ -109,7 +108,7 @@ jobs:
       - run: uv sync
 
       - name: Write private key
-        run: echo "${{ secrets.SNOWFLAKE_PRIVATE_KEY }}" | base64 -d > /tmp/rsa_key.p8
+        run: echo "${{ secrets.TERRAFORM_PRIVATE_KEY }}" | base64 -d > /tmp/rsa_key.p8
 
       - run: uv run dbt deps --profiles-dir .
 
