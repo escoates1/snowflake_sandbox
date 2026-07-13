@@ -14,11 +14,10 @@
 
 ## Ingestion
 
-- [ ] Create ingestion audit table to be able to store watermark
-- [ ] Create python ingestion scripts
-- [ ] Automate with a task - ad hoc runs
+- [x] Create ingestion audit table to be able to store watermark
+- [x] Create python ingestion scripts
 - [ ] Split ingestion scripts into individual envs
-- [ ] Configure ingestion scripts with CI/CD
+- [x] Configure ingestion scripts with CI/CD
 
 ## dbt
 
