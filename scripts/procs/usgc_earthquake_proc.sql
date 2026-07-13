@@ -1,13 +1,19 @@
 USE ROLE ENGINEER;
 
+-- Stored procedure to ingest USGS earthquake data, generated for DEV/TEST/PROD
+-- Co-authored with CoCo
+
+-- ============================================================
+-- DWH_DEV
+-- ============================================================
 CREATE OR REPLACE PROCEDURE DWH_DEV.RAW.INGEST_USGS_EARTHQUAKES("DATABASE_NAME" VARCHAR, "SCHEMA_NAME" VARCHAR)
-    RETURNS VARCHAR
-    LANGUAGE PYTHON
-    RUNTIME_VERSION = '3.11'
-    PACKAGES = ('snowflake-snowpark-python','requests')
-    HANDLER = 'run'
-    EXTERNAL_ACCESS_INTEGRATIONS = (USGS_EARTHQUAKE_ACCESS_INTEGRATION)
-    EXECUTE AS CALLER
+RETURNS VARCHAR
+LANGUAGE PYTHON
+RUNTIME_VERSION = '3.11'
+PACKAGES = ('snowflake-snowpark-python','requests')
+HANDLER = 'run'
+EXTERNAL_ACCESS_INTEGRATIONS = (USGS_EARTHQUAKE_ACCESS_INTEGRATION)
+EXECUTE AS CALLER
 AS '
 import requests
 import json
@@ -131,17 +137,17 @@ def run(session: Session, database_name: str, schema_name: str) -> str:
            .write.mode("append")
            .save_as_table([database_name, schema_name, "USGS_EARTHQUAKES_FDSNWS_LANDING"]))
 
-        # Step 5: Merge into the main table (deduplicate on ID)
-        session.sql(f"""
-            MERGE INTO {main_table} tgt
-            USING {landing_table} src
-            ON tgt.ID = src.ID
-            WHEN NOT MATCHED THEN INSERT
-                SELECT *
+        # Step 5: Insert into main table, skipping any IDs that already exist
+        insert_result = session.sql(f"""
+            INSERT INTO {main_table}
+            SELECT src.*
+            FROM {landing_table} src
+            WHERE src.ID NOT IN (SELECT ID FROM {main_table})
         """).collect()
+        actual_new_rows = insert_result[0][''number of rows inserted''] if insert_result and ''number of rows inserted'' in insert_result[0].as_dict() else rows_ingested
 
         # Step 6: Determine the max event time for the new watermark
-        # Use TIME (event occurrence epoch) since the API starttime param filters on event time
+        # Add 1 second so the inclusive starttime filter excludes this boundary event next run
         max_event_time = max(
             (r[''TIME''] for r in rows if r[''TIME''] is not None),
             default=None
@@ -149,7 +155,7 @@ def run(session: Session, database_name: str, schema_name: str) -> str:
 
         max_time_clause = "NULL"
         if max_event_time:
-            max_time_ts = datetime.utcfromtimestamp(max_event_time / 1000).strftime(''%Y-%m-%d %H:%M:%S'')
+            max_time_ts = datetime.utcfromtimestamp((max_event_time / 1000) + 1).strftime(''%Y-%m-%d %H:%M:%S'')
             max_time_clause = f"''{max_time_ts}''::TIMESTAMP_NTZ"
 
         # Insert metadata row for this run
@@ -159,7 +165,7 @@ def run(session: Session, database_name: str, schema_name: str) -> str:
                  NEW_ROWS_INGESTED, STATUS, ERROR_MESSAGE)
             VALUES
                 (''P1'', ''USGC_EARTHQUAKES'', CURRENT_TIMESTAMP(), {max_time_clause},
-                 {rows_ingested}, ''SUCCESS'', NULL)
+                 {actual_new_rows}, ''SUCCESS'', NULL)
         """).collect()
 
     except Exception as e:
@@ -178,17 +184,20 @@ def run(session: Session, database_name: str, schema_name: str) -> str:
 
         return f''FAILURE: {str(e)}''
 
-    return f''SUCCESS: {rows_ingested} rows ingested.''
+    return f''SUCCESS: {actual_new_rows} rows ingested.''
 ';
 
+-- ============================================================
+-- DWH_TEST
+-- ============================================================
 CREATE OR REPLACE PROCEDURE DWH_TEST.RAW.INGEST_USGS_EARTHQUAKES("DATABASE_NAME" VARCHAR, "SCHEMA_NAME" VARCHAR)
-    RETURNS VARCHAR
-    LANGUAGE PYTHON
-    RUNTIME_VERSION = '3.11'
-    PACKAGES = ('snowflake-snowpark-python','requests')
-    HANDLER = 'run'
-    EXTERNAL_ACCESS_INTEGRATIONS = (USGS_EARTHQUAKE_ACCESS_INTEGRATION)
-    EXECUTE AS CALLER
+RETURNS VARCHAR
+LANGUAGE PYTHON
+RUNTIME_VERSION = '3.11'
+PACKAGES = ('snowflake-snowpark-python','requests')
+HANDLER = 'run'
+EXTERNAL_ACCESS_INTEGRATIONS = (USGS_EARTHQUAKE_ACCESS_INTEGRATION)
+EXECUTE AS CALLER
 AS '
 import requests
 import json
@@ -312,17 +321,17 @@ def run(session: Session, database_name: str, schema_name: str) -> str:
            .write.mode("append")
            .save_as_table([database_name, schema_name, "USGS_EARTHQUAKES_FDSNWS_LANDING"]))
 
-        # Step 5: Merge into the main table (deduplicate on ID)
-        session.sql(f"""
-            MERGE INTO {main_table} tgt
-            USING {landing_table} src
-            ON tgt.ID = src.ID
-            WHEN NOT MATCHED THEN INSERT
-                SELECT *
+        # Step 5: Insert into main table, skipping any IDs that already exist
+        insert_result = session.sql(f"""
+            INSERT INTO {main_table}
+            SELECT src.*
+            FROM {landing_table} src
+            WHERE src.ID NOT IN (SELECT ID FROM {main_table})
         """).collect()
+        actual_new_rows = insert_result[0][''number of rows inserted''] if insert_result and ''number of rows inserted'' in insert_result[0].as_dict() else rows_ingested
 
         # Step 6: Determine the max event time for the new watermark
-        # Use TIME (event occurrence epoch) since the API starttime param filters on event time
+        # Add 1 second so the inclusive starttime filter excludes this boundary event next run
         max_event_time = max(
             (r[''TIME''] for r in rows if r[''TIME''] is not None),
             default=None
@@ -330,7 +339,7 @@ def run(session: Session, database_name: str, schema_name: str) -> str:
 
         max_time_clause = "NULL"
         if max_event_time:
-            max_time_ts = datetime.utcfromtimestamp(max_event_time / 1000).strftime(''%Y-%m-%d %H:%M:%S'')
+            max_time_ts = datetime.utcfromtimestamp((max_event_time / 1000) + 1).strftime(''%Y-%m-%d %H:%M:%S'')
             max_time_clause = f"''{max_time_ts}''::TIMESTAMP_NTZ"
 
         # Insert metadata row for this run
@@ -340,7 +349,7 @@ def run(session: Session, database_name: str, schema_name: str) -> str:
                  NEW_ROWS_INGESTED, STATUS, ERROR_MESSAGE)
             VALUES
                 (''P1'', ''USGC_EARTHQUAKES'', CURRENT_TIMESTAMP(), {max_time_clause},
-                 {rows_ingested}, ''SUCCESS'', NULL)
+                 {actual_new_rows}, ''SUCCESS'', NULL)
         """).collect()
 
     except Exception as e:
@@ -359,17 +368,20 @@ def run(session: Session, database_name: str, schema_name: str) -> str:
 
         return f''FAILURE: {str(e)}''
 
-    return f''SUCCESS: {rows_ingested} rows ingested.''
+    return f''SUCCESS: {actual_new_rows} rows ingested.''
 ';
 
+-- ============================================================
+-- DWH_PROD
+-- ============================================================
 CREATE OR REPLACE PROCEDURE DWH_PROD.RAW.INGEST_USGS_EARTHQUAKES("DATABASE_NAME" VARCHAR, "SCHEMA_NAME" VARCHAR)
-    RETURNS VARCHAR
-    LANGUAGE PYTHON
-    RUNTIME_VERSION = '3.11'
-    PACKAGES = ('snowflake-snowpark-python','requests')
-    HANDLER = 'run'
-    EXTERNAL_ACCESS_INTEGRATIONS = (USGS_EARTHQUAKE_ACCESS_INTEGRATION)
-    EXECUTE AS CALLER
+RETURNS VARCHAR
+LANGUAGE PYTHON
+RUNTIME_VERSION = '3.11'
+PACKAGES = ('snowflake-snowpark-python','requests')
+HANDLER = 'run'
+EXTERNAL_ACCESS_INTEGRATIONS = (USGS_EARTHQUAKE_ACCESS_INTEGRATION)
+EXECUTE AS CALLER
 AS '
 import requests
 import json
@@ -493,17 +505,17 @@ def run(session: Session, database_name: str, schema_name: str) -> str:
            .write.mode("append")
            .save_as_table([database_name, schema_name, "USGS_EARTHQUAKES_FDSNWS_LANDING"]))
 
-        # Step 5: Merge into the main table (deduplicate on ID)
-        session.sql(f"""
-            MERGE INTO {main_table} tgt
-            USING {landing_table} src
-            ON tgt.ID = src.ID
-            WHEN NOT MATCHED THEN INSERT
-                SELECT *
+        # Step 5: Insert into main table, skipping any IDs that already exist
+        insert_result = session.sql(f"""
+            INSERT INTO {main_table}
+            SELECT src.*
+            FROM {landing_table} src
+            WHERE src.ID NOT IN (SELECT ID FROM {main_table})
         """).collect()
+        actual_new_rows = insert_result[0][''number of rows inserted''] if insert_result and ''number of rows inserted'' in insert_result[0].as_dict() else rows_ingested
 
         # Step 6: Determine the max event time for the new watermark
-        # Use TIME (event occurrence epoch) since the API starttime param filters on event time
+        # Add 1 second so the inclusive starttime filter excludes this boundary event next run
         max_event_time = max(
             (r[''TIME''] for r in rows if r[''TIME''] is not None),
             default=None
@@ -511,7 +523,7 @@ def run(session: Session, database_name: str, schema_name: str) -> str:
 
         max_time_clause = "NULL"
         if max_event_time:
-            max_time_ts = datetime.utcfromtimestamp(max_event_time / 1000).strftime(''%Y-%m-%d %H:%M:%S'')
+            max_time_ts = datetime.utcfromtimestamp((max_event_time / 1000) + 1).strftime(''%Y-%m-%d %H:%M:%S'')
             max_time_clause = f"''{max_time_ts}''::TIMESTAMP_NTZ"
 
         # Insert metadata row for this run
@@ -521,7 +533,7 @@ def run(session: Session, database_name: str, schema_name: str) -> str:
                  NEW_ROWS_INGESTED, STATUS, ERROR_MESSAGE)
             VALUES
                 (''P1'', ''USGC_EARTHQUAKES'', CURRENT_TIMESTAMP(), {max_time_clause},
-                 {rows_ingested}, ''SUCCESS'', NULL)
+                 {actual_new_rows}, ''SUCCESS'', NULL)
         """).collect()
 
     except Exception as e:
@@ -540,5 +552,5 @@ def run(session: Session, database_name: str, schema_name: str) -> str:
 
         return f''FAILURE: {str(e)}''
 
-    return f''SUCCESS: {rows_ingested} rows ingested.''
+    return f''SUCCESS: {actual_new_rows} rows ingested.''
 ';
