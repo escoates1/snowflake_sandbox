@@ -2,18 +2,20 @@ name: dbt
 
 # ──────────────────────────────────────────────────────────────────────────
 # WHEN THIS RUNS
-#   • PR to main    -> validate-dev only: `dbt build` against DEV.
+#   • PR to main    -> validate-dev only: `dbt build` against DEV. Runs on
+#     every PR (no path filter) so it can be a required status check that
+#     blocks merging main regardless of which files changed.
 #   • Push to main  -> deploy-test, then (gated) deploy-prod. Dev is NOT
 #     rebuilt here — it was already proven in validate-dev before merge.
-# Path-filtered so it's skipped when only terraform/ or scripts/ changed.
+#     Path-filtered so deploys are skipped when only terraform/ or scripts/
+#     changed.
 # ──────────────────────────────────────────────────────────────────────────
 on:
   pull_request:
     branches: [main]
-    paths: ["dbt/**", ".github/workflows/dbt.yml"]
   push:
     branches: [main]
-    paths: ["dbt/**", ".github/workflows/dbt.yml"]
+    paths: ["dbt/**"]
 
 concurrency:
   group: dbt-${{ github.ref }}
