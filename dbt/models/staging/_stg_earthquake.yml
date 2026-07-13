@@ -69,21 +69,24 @@ models:
           was issued for the event.
         data_tests:
           - accepted_values:
-              values: ['green', 'yellow', 'orange', 'red']
+              arguments:
+                values: ['green', 'yellow', 'orange', 'red']
 
       - name: STATUS
         description: Review status of the event — automatic or reviewed.
         data_tests:
           - not_null
           - accepted_values:
-              values: ['automatic', 'reviewed']
+              arguments:
+                values: ['automatic', 'reviewed']
 
       - name: TSUNAMI
         description: Tsunami flag — 1 for events in oceanic regions that may generate a tsunami, else 0.
         data_tests:
           - not_null
           - accepted_values:
-              values: [0, 1]
+              arguments:
+                values: [0, 1]
 
       - name: FELT
         description: Number of "Did You Feel It?" reports. NULL when there are none.
@@ -92,3 +95,121 @@ models:
         description: Event origin time (epoch milliseconds, UTC) from the USGS source.
         data_tests:
           - not_null
+
+  - name: stg_earthquake__seismic_event
+    description: >
+      Staging model over the USGS earthquake source, selecting the full set of
+      event attributes used to build the seismic event fact table: identifiers,
+      location, magnitude, depth, impact metrics, and the classification/alerting
+      fields carried through for downstream keys.
+      Grain: one row per source event (inherited from usgs_earthquake.earthquakes).
+
+    columns:
+      - name: EVENT_ID
+        description: Natural key of the seismic event from the USGS source.
+        data_tests:
+          - not_null
+          - unique
+
+      - name: UNIX_TIMESTAMP
+        description: Event origin time (epoch milliseconds, UTC) from the USGS source.
+        data_tests:
+          - not_null
+
+      - name: EVENT_URL
+        description: USGS human-readable event page URL.
+        data_tests:
+          - not_null
+
+      - name: DETAIL_URL
+        description: USGS detail feed URL for this event.
+        data_tests:
+          - not_null
+
+      - name: LATITUDE
+        description: Latitude of the event epicentre, in decimal degrees.
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: -90
+                max_value: 90
+
+      - name: LONGITUDE
+        description: Longitude of the event epicentre, in decimal degrees.
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: -180
+                max_value: 180
+
+      - name: DEPTH_IN_KM
+        description: Depth of the event below the surface, in kilometers.
+        data_tests:
+          - not_null
+
+      - name: MAGNITUDE
+        description: Measured magnitude of the event on its reported scale.
+        data_tests:
+          - not_null
+          - dbt_utils.accepted_range:
+              arguments:
+                min_value: -2
+                max_value: 10
+
+      - name: LOCATION
+        description: Human-readable description of the event location (e.g. "10km NE of Ridgecrest, CA").
+        data_tests:
+          - not_null
+
+      - name: FELT
+        description: Number of "Did You Feel It?" reports. NULL when there are none.
+
+      - name: CDI
+        description: Maximum reported Community Determined Intensity. NULL when not available.
+
+      - name: MMI
+        description: Maximum estimated Modified Mercalli Intensity. NULL when not available.
+
+      - name: SIGNIFICANCE
+        description: USGS significance score for the event.
+
+      - name: NUM_STATIONS
+        description: Number of seismic stations used to determine the event location.
+
+      - name: DMIN_DEG
+        description: Horizontal distance from the epicenter to the nearest station, in degrees.
+
+      - name: RMS_SEC
+        description: Root-mean-square travel time residual, in seconds.
+
+      - name: AZIMUTHAL_GAP_DEG
+        description: Largest azimuthal gap between azimuthally adjacent stations, in degrees.
+
+      - name: TYPE
+        description: Type of seismic event (e.g. earthquake, quarry blast, explosion).
+        data_tests:
+          - not_null
+
+      - name: MAGTYPE
+        description: Magnitude-measurement method code (e.g. mww, mb, ml).
+        data_tests:
+          - not_null
+
+      - name: ALERT
+        description: >
+          PAGER alert level (green, yellow, orange, red). NULL when no alert
+          was issued for the event.
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['green', 'yellow', 'orange', 'red']
+
+      - name: TSUNAMI
+        description: Tsunami flag — 1 for events in oceanic regions that may generate a tsunami, else 0.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [0, 1]

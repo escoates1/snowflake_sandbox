@@ -24,7 +24,7 @@ cleaned as (
     select
         {{ dbt_utils.generate_surrogate_key(['PLACE']) }} AS LOCATION_KEY,
         PLACE AS LOCATION,
-        NULLIF(TRIM(REGEXP_REPLACE(REGION, ',?\\s*' || COUNTRY || '$', '')),'') AS REGION,
+        NULLIF(TRIM(REGEXP_REPLACE(REPLACE(REGION, COUNTRY, ''), ',\\s*$', '')),'') AS REGION,
         NULLIF(TRIM(COUNTRY), 'None') AS COUNTRY,
         CASE 
             WHEN LATITUDE > 0 THEN 'N'
@@ -53,7 +53,8 @@ deduplicated AS (
                 )
             ),
             TO_TIMESTAMP_NTZ('9999-12-31')
-        ) AS ROW_EXPIRY_DATE
+        ) AS ROW_EXPIRY_DATE,
+        CURRENT_TIMESTAMP()::TIMESTAMP_NTZ(9) AS DWH_CREATE_TIMESTAMP
     FROM cleaned
     QUALIFY ROW_EXPIRY_DATE = '9999-12-31'
 )
@@ -66,5 +67,6 @@ SELECT
     LAT_HEMISPHERE,
     LON_HEMISPHERE,
     ROW_EFFECTIVE_DATE,
-    ROW_EXPIRY_DATE
+    ROW_EXPIRY_DATE,
+    DWH_CREATE_TIMESTAMP
 FROM deduplicated

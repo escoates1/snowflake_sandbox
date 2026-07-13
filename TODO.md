@@ -22,11 +22,12 @@
 
 ## dbt
 
-- [ ] Model data
-- [ ] Build models
-- [ ] Testing strategy: include relationships tests for dims -> fact
-- [ ] Create views in presentation layer
+- [x] Model data
+- [x] Build models
+- [x] Testing strategy: include relationships tests for dims -> fact
+- [x] Create views in presentation layer
 - [ ] CI/CD across envs
 - [ ] Create a run-operation macro to execute the ingestion_metadata_ddl scripts per dbt run
 - [ ] Create a new service account for running the dbt jobs with. Engineer is fine as a placeholder for now.
-- [ ] Handle null foreign keys
+- [x] Handle null foreign keys
+- [x] Remove US state code seed as unused

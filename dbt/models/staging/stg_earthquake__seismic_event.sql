@@ -16,7 +16,7 @@ select
    felt,
    cdi,
    mmi,
-   sig as sigfinicane,
+   sig as significance,
    nst as num_stations,
    dmin as dmin_deg,
    rms as rms_sec,

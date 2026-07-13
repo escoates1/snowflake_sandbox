@@ -1,5 +1,6 @@
 select 
     location_key,
+    location,
     region,
     country,
     lat_hemisphere,

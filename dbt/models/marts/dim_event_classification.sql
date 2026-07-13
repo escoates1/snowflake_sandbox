@@ -48,9 +48,17 @@ deduplicated AS (
 
 result as (
     select *,
-        CURRENT_TIMESTAMP() AS DWH_CREATE_TIMESTAMP
+        CURRENT_TIMESTAMP()::TIMESTAMP_NTZ(9) AS DWH_CREATE_TIMESTAMP
     from deduplicated
 )
 
-select *
+select
+    event_class_key,
+    event_type,
+    magnitude_type_code,
+    magnitude_type_desc,
+    magnitude_band,
+    row_effective_date,
+    row_expiry_date,
+    dwh_create_timestamp
 from result

@@ -12,7 +12,7 @@ models:
       schema: presentation
       tags: ['analysis', 'dimension']
     columns:
-      - name: EVENT_KEY
+      - name: EVENT_CLASS_KEY
         description: Surrogate key for the event classification. Primary key of this dimension.
         data_tests:
           - not_null
@@ -27,10 +27,6 @@ models:
         description: Uppercased, trimmed magnitude-method code (e.g. MWW, MB, ML).
         data_tests:
           - not_null
-          # ties the code back to your seed lookup — remove if the seed join isn't in place yet
-          - relationships:
-              to: ref('magnitude_types')
-              field: magnitude_code
 
       - name: MAGNITUDE_TYPE_DESC
         description: >
@@ -41,7 +37,8 @@ models:
         description: Qualitative magnitude band. NULL for magnitudes outside 5.0–9.9.
         data_tests:
           - accepted_values:
-              values: ['Moderate', 'Strong', 'Major', 'Great', 'Extreme']
+              arguments:
+                values: ['Moderate', 'Strong', 'Major', 'Great', 'Extreme']
 
   - name: dim_date_view
     identifier: dim_date
@@ -145,13 +142,15 @@ models:
         description: Latitude hemisphere — N (north) or S (south). NULL on the equator (latitude = 0).
         data_tests:
           - accepted_values:
-              values: ['N', 'S']
+              arguments:
+                values: ['N', 'S']
 
       - name: LON_HEMISPHERE
         description: Longitude hemisphere — E (east) or W (west). NULL on the prime/antimeridian (longitude = 0).
         data_tests:
           - accepted_values:
-              values: ['E', 'W']
+              arguments:
+                values: ['E', 'W']
 
   - name: dim_alert_status_view
     identifier: dim_alert_status
@@ -185,16 +184,118 @@ models:
           NULL when the source status is neither.
         data_tests:
           - accepted_values:
-              values: ['Y', 'N']
+              arguments:
+                values: ['Y', 'N']
 
       - name: TSUNAMI_FLAG
         description: Y when a tsunami was associated with the event, N otherwise.
         data_tests:
           - accepted_values:
-              values: ['Y', 'N']
+              arguments:
+                values: ['Y', 'N']
 
       - name: FELT_BY_HUMAN_FLAG
         description: Y when at least one person reported feeling the event, N otherwise.
         data_tests:
           - accepted_values:
-              values: ['Y', 'N']
+              arguments:
+                values: ['Y', 'N']
+
+  - name: fact_seismic_event_view
+    identifier: fact_seismic_event
+    description: >
+      Seismic event fact table for USGS earthquakes, with foreign keys to the
+      date, location, event-classification, and alert-status dimensions plus
+      event-level metrics.
+    config:
+      materialized: view
+      schema: presentation
+      tags: ['analysis', 'fact']
+    columns:
+      - name: EVENT_KEY
+        description: Surrogate key hashed from EVENT_ID. Primary key of this fact table.
+        data_tests:
+          - not_null
+          - unique
+
+      - name: EVENT_ID
+        description: Natural key of the seismic event from the USGS source.
+        data_tests:
+          - not_null
+
+      - name: DATE_KEY
+        description: Foreign key to dim_date_view — calendar date the event occurred (UTC).
+        data_tests:
+          - not_null
+
+      - name: LOCATION_KEY
+        description: Foreign key to dim_location_view, hashed from the free-text place description.
+        data_tests:
+          - not_null
+
+      - name: EVENT_CLASS_KEY
+        description: >
+          Foreign key to dim_event_classification_view, hashed from event type,
+          magnitude type code, and magnitude band.
+        data_tests:
+          - not_null
+
+      - name: ALERT_STATUS_KEY
+        description: >
+          Foreign key to dim_alert_status_view, hashed from pager alert level,
+          tsunami flag, and felt-by-human flag.
+        data_tests:
+          - not_null
+
+      - name: EVENT_TIMESTAMP
+        description: UTC timestamp the event occurred, converted from the source epoch-millisecond time.
+        data_tests:
+          - not_null
+
+      - name: EVENT_URL
+        description: USGS human-readable event page URL.
+
+      - name: DETAIL_URL
+        description: USGS detail feed URL for this event.
+
+      - name: LATITUDE
+        description: Event latitude in decimal degrees.
+
+      - name: LONGITUDE
+        description: Event longitude in decimal degrees.
+
+      - name: DEPTH_IN_KM
+        description: Depth of the event below the surface, in kilometers.
+
+      - name: MAGNITUDE
+        description: Event magnitude, measured per the method recorded on dim_event_classification_view (MAGNITUDE_TYPE_CODE).
+
+      - name: DIRECTION_FROM_PLACE
+        description: Compass direction from the named place, parsed from the free-text location (e.g. "NE").
+
+      - name: DISTANCE_FROM_PLACE_KM
+        description: Distance from the named place, parsed from the free-text location (e.g. "10 km").
+
+      - name: FELT_COUNT
+        description: Number of "Did You Feel It?" responses submitted for the event.
+
+      - name: CDI_MAX
+        description: Maximum reported Community Determined Intensity.
+
+      - name: MMI_MAX
+        description: Maximum estimated Modified Mercalli Intensity.
+
+      - name: SIGNIFICANCE
+        description: USGS significance score for the event.
+
+      - name: NUM_STATIONS
+        description: Number of seismic stations used to determine the event location.
+
+      - name: DMIN_DEG
+        description: Horizontal distance from the epicenter to the nearest station, in degrees.
+
+      - name: RMS_SEC
+        description: Root-mean-square travel time residual, in seconds.
+
+      - name: AZIMUTHAL_GAP_DEG
+        description: Largest azimuthal gap between azimuthally adjacent stations, in degrees.

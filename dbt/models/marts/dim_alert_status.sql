@@ -51,7 +51,7 @@ deduplicated as (
 
 result as (
     select *,
-        CURRENT_TIMESTAMP() AS DWH_CREATE_TIMESTAMP
+        CURRENT_TIMESTAMP()::TIMESTAMP_NTZ(9) AS DWH_CREATE_TIMESTAMP
     from deduplicated
 )
 

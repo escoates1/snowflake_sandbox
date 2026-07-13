@@ -13,20 +13,3 @@ seeds:
         description: Human-readable magnitude method.
         data_tests:
           - not_null
-
-  - name: us_state_codes
-    description: >
-      Mapping of US state codes to human-readable state names.
-    columns:
-      - name: STATE_NAME
-        description: Human-readable US state name.
-        data_tests:
-          - not_null
-          - unique
-
-      - name: STATE_CODE
-        description: Uppercase, trimmed US state code (e.g. CA, NY, TX).
-        data_tests:
-          - not_null
-          - unique
-          

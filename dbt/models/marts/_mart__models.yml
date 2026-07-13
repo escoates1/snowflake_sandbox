@@ -11,7 +11,7 @@ models:
       schema: marts
       tags: ['analysis', 'dimension']
     columns:
-      - name: EVENT_KEY
+      - name: EVENT_CLASS_KEY
         description: Surrogate key for the event classification. Primary key of this dimension.
         data_tests:
           - not_null
@@ -26,10 +26,6 @@ models:
         description: Uppercased, trimmed magnitude-method code (e.g. MWW, MB, ML).
         data_tests:
           - not_null
-          # ties the code back to your seed lookup — remove if the seed join isn't in place yet
-          - relationships:
-              to: ref('magnitude_types')
-              field: magnitude_code
 
       - name: MAGNITUDE_TYPE_DESC
         description: >
@@ -37,10 +33,11 @@ models:
           mapped values.
 
       - name: MAGNITUDE_BAND
-        description: Qualitative magnitude band. NULL for magnitudes outside 5.0–9.9.
+        description: Qualitative magnitude band. NULL for magnitudes outside 5.0-9.9.
         data_tests:
           - accepted_values:
-              values: ['Moderate', 'Strong', 'Major', 'Great', 'Extreme']
+              arguments:
+                values: ['Moderate', 'Strong', 'Major', 'Great', 'Extreme']
 
       - name: ROW_EFFECTIVE_DATE
         description: Timestamp from which this event classification record is effective (derived from the event time).
@@ -164,13 +161,15 @@ models:
         description: Latitude hemisphere — N (north) or S (south). NULL on the equator (latitude = 0).
         data_tests:
           - accepted_values:
-              values: ['N', 'S']
+              arguments:
+                values: ['N', 'S']
 
       - name: LON_HEMISPHERE
         description: Longitude hemisphere — E (east) or W (west). NULL on the prime/antimeridian (longitude = 0).
         data_tests:
           - accepted_values:
-              values: ['E', 'W']
+              arguments:
+                values: ['E', 'W']
 
       - name: ROW_EFFECTIVE_DATE
         description: Timestamp from which this location record is effective (derived from the event time).
@@ -214,19 +213,22 @@ models:
           NULL when the source status is neither.
         data_tests:
           - accepted_values:
-              values: ['Y', 'N']
+              arguments:
+                values: ['Y', 'N']
 
       - name: TSUNAMI_FLAG
         description: Y when a tsunami was associated with the event, N otherwise.
         data_tests:
           - accepted_values:
-              values: ['Y', 'N']
+              arguments:
+                values: ['Y', 'N']
 
       - name: FELT_BY_HUMAN_FLAG
         description: Y when at least one person reported feeling the event, N otherwise.
         data_tests:
           - accepted_values:
-              values: ['Y', 'N']
+              arguments:
+                values: ['Y', 'N']
 
       - name: ROW_EFFECTIVE_DATE
         description: Timestamp from which this alert status record is effective (derived from the event time).
@@ -242,3 +244,250 @@ models:
         description: UTC timestamp when this row was built by dbt.
         data_tests:
           - not_null
+
+  - name: fact_seismic_event
+    description: >
+      Seismic event fact table for USGS earthquakes, with foreign keys to the
+      date, location, event-classification, and alert-status dimensions plus
+      event-level metrics. Built on stg_earthquake__seismic_event with a manual
+      SCD Type 1 pattern matching the dimensions. Grain: one row per event_id.
+    config:
+      materialized: table
+      schema: marts
+      tags: ['analysis', 'fact']
+    columns:
+      - name: EVENT_KEY
+        description: Surrogate key hashed from EVENT_ID. Primary key of this fact table.
+        data_tests:
+          - not_null
+          - unique
+
+      - name: EVENT_ID
+        description: Natural key of the seismic event from the USGS source.
+        data_tests:
+          - not_null
+
+      - name: DATE_KEY
+        description: Foreign key to dim_date — calendar date the event occurred (UTC).
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: DATE_KEY
+
+      - name: LOCATION_KEY
+        description: Foreign key to dim_location, hashed from the free-text place description.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_location')
+                field: LOCATION_KEY
+
+      - name: EVENT_CLASS_KEY
+        description: >
+          Foreign key to dim_event_classification, hashed from event type,
+          magnitude type code, and magnitude band.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_event_classification')
+                field: EVENT_CLASS_KEY
+
+      - name: ALERT_STATUS_KEY
+        description: >
+          Foreign key to dim_alert_status, hashed from pager alert level,
+          tsunami flag, and felt-by-human flag.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_alert_status')
+                field: ALERT_STATUS_KEY
+
+      - name: EVENT_TIMESTAMP
+        description: UTC timestamp the event occurred, converted from the source epoch-millisecond time.
+        data_tests:
+          - not_null
+
+      - name: EVENT_URL
+        description: USGS human-readable event page URL.
+
+      - name: DETAIL_URL
+        description: USGS detail feed URL for this event.
+
+      - name: LATITUDE
+        description: Event latitude in decimal degrees.
+
+      - name: LONGITUDE
+        description: Event longitude in decimal degrees.
+
+      - name: DEPTH_IN_KM
+        description: Depth of the event below the surface, in kilometers.
+
+      - name: MAGNITUDE
+        description: Event magnitude, measured per the method recorded on dim_event_classification (MAGNITUDE_TYPE_CODE).
+
+      - name: DIRECTION_FROM_PLACE
+        description: Compass direction from the named place, parsed from the free-text location (e.g. "NE").
+
+      - name: DISTANCE_FROM_PLACE_KM
+        description: Distance from the named place, parsed from the free-text location (e.g. "10 km").
+
+      - name: FELT_COUNT
+        description: Number of "Did You Feel It?" responses submitted for the event.
+
+      - name: CDI_MAX
+        description: Maximum reported Community Determined Intensity.
+
+      - name: MMI_MAX
+        description: Maximum estimated Modified Mercalli Intensity.
+
+      - name: SIGNIFICANCE
+        description: USGS significance score for the event.
+
+      - name: NUM_STATIONS
+        description: Number of seismic stations used to determine the event location.
+
+      - name: DMIN_DEG
+        description: Horizontal distance from the epicenter to the nearest station, in degrees.
+
+      - name: RMS_SEC
+        description: Root-mean-square travel time residual, in seconds.
+
+      - name: AZIMUTHAL_GAP_DEG
+        description: Largest azimuthal gap between azimuthally adjacent stations, in degrees.
+
+      - name: ROW_EFFECTIVE_DATE
+        description: Timestamp from which this event record is effective (derived from the event time).
+        data_tests:
+          - not_null
+
+      - name: ROW_EXPIRY_DATE
+        description: Timestamp until which this record is effective; 9999-12-31 for the current record.
+        data_tests:
+          - not_null
+
+      - name: DWH_CREATE_TIMESTAMP
+        description: UTC timestamp when this row was built by dbt.
+        data_tests:
+          - not_null
+
+unit_tests:
+  - name: test_magnitude_band_boundaries
+    description: >
+      Checks the MAGNITUDE_BAND CASE statement in dim_event_classification at
+      its boundaries — just under 5.0 (NULL), the low edge of Moderate (5.0),
+      and the Extreme threshold (9.0+).
+    model: dim_event_classification
+    given:
+      - input: ref('stg_earthquake__event_classification')
+        rows:
+          - {TYPE: earthquake, MAGTYPE: mww, MAG: 4.9, TIME: 1000}
+          - {TYPE: earthquake, MAGTYPE: mww, MAG: 5.0, TIME: 1000}
+          - {TYPE: earthquake, MAGTYPE: mww, MAG: 9.5, TIME: 1000}
+      - input: ref('magnitude_types')
+        rows:
+          - {MAGNITUDE_TYPE_CODE: mww, MAGNITUDE_TYPE_DESC: moment W-phase}
+    expect:
+      rows:
+        - {MAGNITUDE_BAND: null}
+        - {MAGNITUDE_BAND: Moderate}
+        - {MAGNITUDE_BAND: Extreme}
+
+  - name: test_alert_status_flag_derivation
+    description: >
+      Checks the PAGER_ALERT_RANK, REVIEWED_BY_HUMAN_FLAG, TSUNAMI_FLAG, and
+      FELT_BY_HUMAN_FLAG derivations in dim_alert_status, covering both a
+      fully-populated alert and an all-NULL/automatic/no-felt-reports case.
+    model: dim_alert_status
+    given:
+      - input: ref('stg_earthquake__alert_status')
+        rows:
+          - {ALERT: red, STATUS: reviewed, TSUNAMI: 1, FELT: 5, TIME: 1000}
+          - {ALERT: null, STATUS: automatic, TSUNAMI: 0, FELT: 0, TIME: 2000}
+    expect:
+      rows:
+        - {PAGER_ALERT_RANK: 4, REVIEWED_BY_HUMAN_FLAG: 'Y', TSUNAMI_FLAG: 'Y', FELT_BY_HUMAN_FLAG: 'Y'}
+        - {PAGER_ALERT_RANK: null, REVIEWED_BY_HUMAN_FLAG: 'N', TSUNAMI_FLAG: 'N', FELT_BY_HUMAN_FLAG: 'N'}
+
+  - name: test_direction_distance_regex_parsing
+    description: >
+      Checks the DIRECTION_FROM_PLACE / DISTANCE_FROM_PLACE_KM REGEXP_SUBSTR
+      parsing in fact_seismic_event — a single-letter direction, a
+      multi-letter direction (ESE), and a place with no leading distance/
+      direction prefix (both NULL).
+    model: fact_seismic_event
+    given:
+      - input: ref('stg_earthquake__seismic_event')
+        rows:
+          - EVENT_ID: ci37374811
+            UNIX_TIMESTAMP: 1699999999999
+            EVENT_URL: https://earthquake.usgs.gov/earthquakes/eventpage/ci37374811
+            DETAIL_URL: https://earthquake.usgs.gov/earthquakes/feed/v1.0/detail/ci37374811.geojson
+            LATITUDE: 35.7
+            LONGITUDE: -117.6
+            DEPTH_IN_KM: 8.2
+            MAGNITUDE: 4.2
+            LOCATION: '10 km NE of Ridgecrest, CA'
+            FELT: 12
+            CDI: 3.4
+            MMI: 4.1
+            SIGNIFICANCE: 250
+            NUM_STATIONS: 30
+            DMIN_DEG: 0.05
+            RMS_SEC: 0.2
+            AZIMUTHAL_GAP_DEG: 45
+            TYPE: earthquake
+            MAGTYPE: mww
+            ALERT: green
+            TSUNAMI: 0
+          - EVENT_ID: ak0234abcd
+            UNIX_TIMESTAMP: 1700000000000
+            EVENT_URL: https://earthquake.usgs.gov/earthquakes/eventpage/ak0234abcd
+            DETAIL_URL: https://earthquake.usgs.gov/earthquakes/feed/v1.0/detail/ak0234abcd.geojson
+            LATITUDE: 61.2
+            LONGITUDE: -149.9
+            DEPTH_IN_KM: 33.0
+            MAGNITUDE: 3.8
+            LOCATION: '5 km ESE of Home, AK'
+            FELT: 0
+            CDI: null
+            MMI: null
+            SIGNIFICANCE: 120
+            NUM_STATIONS: 15
+            DMIN_DEG: 0.1
+            RMS_SEC: 0.3
+            AZIMUTHAL_GAP_DEG: 90
+            TYPE: earthquake
+            MAGTYPE: ml
+            ALERT: null
+            TSUNAMI: 0
+          - EVENT_ID: us7000abcd
+            UNIX_TIMESTAMP: 1700000100000
+            EVENT_URL: https://earthquake.usgs.gov/earthquakes/eventpage/us7000abcd
+            DETAIL_URL: https://earthquake.usgs.gov/earthquakes/feed/v1.0/detail/us7000abcd.geojson
+            LATITUDE: -6.2
+            LONGITUDE: 130.5
+            DEPTH_IN_KM: 120.0
+            MAGNITUDE: 5.6
+            LOCATION: 'Banda Sea'
+            FELT: 0
+            CDI: null
+            MMI: null
+            SIGNIFICANCE: 400
+            NUM_STATIONS: 50
+            DMIN_DEG: 2.1
+            RMS_SEC: 0.9
+            AZIMUTHAL_GAP_DEG: 30
+            TYPE: earthquake
+            MAGTYPE: mww
+            ALERT: null
+            TSUNAMI: 0
+    expect:
+      rows:
+        - {DIRECTION_FROM_PLACE: 'NE', DISTANCE_FROM_PLACE_KM: '10 km'}
+        - {DIRECTION_FROM_PLACE: 'ESE', DISTANCE_FROM_PLACE_KM: '5 km'}
+        - {DIRECTION_FROM_PLACE: null, DISTANCE_FROM_PLACE_KM: null}
