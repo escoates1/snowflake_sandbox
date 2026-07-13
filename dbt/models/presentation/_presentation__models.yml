@@ -277,7 +277,7 @@ models:
         description: Distance from the named place, parsed from the free-text location (e.g. "10 km").
 
       - name: FELT_COUNT
-        description: Number of "Did You Feel It?" responses submitted for the event.
+        description: Number of "Did You Feel It?" responses submitted for the event by people.
 
       - name: CDI_MAX
         description: Maximum reported Community Determined Intensity.
