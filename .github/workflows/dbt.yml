@@ -44,7 +44,7 @@ jobs:
       - run: uv sync
 
       - name: Write private key
-        run: echo "${{ secrets.TERRAFORM_PRIVATE_KEY }}" | base64 -d > /tmp/rsa_key.p8
+        run: echo "${{ secrets.DBT_USER_PRIVATE_KEY }}" | base64 -d > /tmp/rsa_key.p8
 
       - run: uv run dbt deps --profiles-dir .
 
@@ -76,7 +76,7 @@ jobs:
       - run: uv sync
 
       - name: Write private key
-        run: echo "${{ secrets.TERRAFORM_PRIVATE_KEY }}" | base64 -d > /tmp/rsa_key.p8
+        run: echo "${{ secrets.DBT_USER_PRIVATE_KEY }}" | base64 -d > /tmp/rsa_key.p8
 
       - run: uv run dbt deps --profiles-dir .
 
@@ -108,7 +108,7 @@ jobs:
       - run: uv sync
 
       - name: Write private key
-        run: echo "${{ secrets.TERRAFORM_PRIVATE_KEY }}" | base64 -d > /tmp/rsa_key.p8
+        run: echo "${{ secrets.DBT_USER_PRIVATE_KEY }}" | base64 -d > /tmp/rsa_key.p8
 
       - run: uv run dbt deps --profiles-dir .
 
