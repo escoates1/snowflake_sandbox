@@ -9,6 +9,6 @@ output "analyst_role_name" {
 }
 
 output "dbt_runs_role" {
-  description = "Name of the DBT_TRANSFORMATIONS account role."
+  description = "Name of the DBT_TRANSFORMATIONS role."
   value       = snowflake_account_role.dbt_runs_role.name
 }
