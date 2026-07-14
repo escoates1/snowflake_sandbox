@@ -296,7 +296,36 @@ command with `--target` (use `prod` with care):
 uv run --env-file .env dbt build --project-dir dbt --profiles-dir dbt --target test
 ```
 
-### 7. GitHub Actions secrets and branch protection
+### 7. CI/CD Workflows
+
+Config for the below jobs can be found in the YAML files under .github/workflows/.
+
+| Workflow | Triggers | What it does |
+| --- | --- | --- |
+| `ci.yml` | PR → `main` (any path) | `lint`: `ruff check` + `ruff format --check`. `dbt-build`: `dbt build --fail-fast` against `DEV`, connecting as the `DBT_TRANSFORMATIONS`-scoped service account. |
+| `dbt.yml` | Push → `main`, only when `dbt/**` changed | Sequential `deploy-dev → deploy-test → deploy-prod`, each running `dbt build` against that environment's target. `test` and `prod` are tied to GitHub Environments, so they pause for manual approval if reviewers are configured. |
+| `terraform.yml` | PR → `main` (plan) / push → `main` (apply), only when `terraform/**` changed | **plan**: `fmt -check` → `validate` → `plan` across all four environments (`account`/`dev`/`test`/`prod`) as a matrix job, posting each plan as a PR comment. **apply**: gated, sequential `account → dev → test → prod` applies, chained with `needs:`, each behind its own GitHub Environment approval. |
+
+**Decision Log:**
+
+- `ci.yml` uses a --fail-fast flag so that the workflow is stopped when any error is encountered, prevent the entire DAG from executing. In particular, this prevents redundant AI_EXTRACT calls.
+- The project is lightweight as-is, so no use of 'slim CI'.
+- PRs are not isolated per schema. This is intended as a sole developer project so no risk of PRs building concurrently and causing conflicts.
+- `dbt.yml`'s `deploy-dev` stage re-runs the same `dbt build` against `DEV` that `ci.yml`
+  already ran pre-merge. That's deliberate duplication: it re-validates the exact
+  post-merge commit (guarding against merge-order races between two PRs that were each fine
+  individually) before `test`/`prod` are allowed to proceed. It does mean `DEV` is built twice per change, however again, lightweight project so not an issue.
+- `dbt.yml` has no pull request trigger — dbt models are only deployed after merge, gated
+  per environment. This keeps `test`/`prod` changes reviewable and reversible-by-approval, at the
+  cost of `test`/`prod` never being previewed before merge (only `DEV`, via `ci.yml`).
+- `terraform.yml` separates `plan` (safe, runs on every PR) from `apply` (state-mutating, runs
+  only after merge). The `plan` matrix uses `fail-fast: false`, so one environment's plan failure
+  doesn't hide the others' — but `apply` is strictly sequential (`account → dev → test → prod`),
+  so a broken `account` apply blocks every environment behind it. A `concurrency` group serialises
+  runs per workflow so two applies can never race each other, at the cost of queuing a second push
+  behind a slow first one instead of running them in parallel.
+
+### 8. GitHub Actions secrets and branch protection
 
 `terraform.yml` and `dbt.yml` authenticate as **different** Snowflake users, so they read
 **different** secrets (**Settings → Secrets and variables → Actions**):
