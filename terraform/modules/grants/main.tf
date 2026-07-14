@@ -215,6 +215,138 @@ resource "snowflake_grant_privileges_to_account_role" "engineer_future_views" {
 }
 
 #################################################################
+# DBT_TRANSFORMATIONS: least-privilege role for the dbt CI/CD jobs
+#################################################################
+
+locals {
+  raw_schema     = "\"${var.database_name}\".\"RAW\""
+  admin_schema   = "\"${var.database_name}\".\"ADMIN\""
+  staging_schema = "\"${var.database_name}\".\"STAGING\""
+  marts_schema   = "\"${var.database_name}\".\"MARTS\""
+}
+
+# Warehouse
+resource "snowflake_grant_privileges_to_account_role" "dbt_warehouse" {
+  account_role_name = var.dbt_role_name
+  privileges        = ["USAGE"]
+  on_account_object {
+    object_type = "WAREHOUSE"
+    object_name = var.warehouse_name
+  }
+}
+
+# Database
+resource "snowflake_grant_privileges_to_account_role" "dbt_database" {
+  account_role_name = var.dbt_role_name
+  privileges        = ["USAGE"]
+  on_account_object {
+    object_type = "DATABASE"
+    object_name = var.database_name
+  }
+}
+
+# RAW schema: read sources, run the ingestion proc, write the tables it touches
+resource "snowflake_grant_privileges_to_account_role" "dbt_raw_schema" {
+  account_role_name = var.dbt_role_name
+  privileges        = ["USAGE"]
+  on_schema { schema_name = local.raw_schema }
+}
+
+# RAW tables
+resource "snowflake_grant_privileges_to_account_role" "dbt_raw_tables" {
+  for_each          = toset(["all", "future"])
+  account_role_name = var.dbt_role_name
+  privileges        = ["SELECT", "INSERT", "TRUNCATE"]
+  on_schema_object {
+    dynamic "all" {
+      for_each = each.key == "all" ? [1] : []
+      content {
+        object_type_plural = "TABLES"
+        in_schema          = local.raw_schema
+      }
+    }
+    dynamic "future" {
+      for_each = each.key == "future" ? [1] : []
+      content {
+        object_type_plural = "TABLES"
+        in_schema          = local.raw_schema
+      }
+    }
+  }
+}
+
+# RAW stored procedures
+resource "snowflake_grant_privileges_to_account_role" "dbt_raw_procedures" {
+  account_role_name = var.dbt_role_name
+  privileges        = ["USAGE"]
+  on_schema_object {
+    all {
+      object_type_plural = "PROCEDURES"
+      in_schema          = local.raw_schema
+    }
+  }
+}
+
+# ADMIN schema: read/write the watermark table only
+resource "snowflake_grant_privileges_to_account_role" "dbt_admin_schema" {
+  account_role_name = var.dbt_role_name
+  privileges        = ["USAGE"]
+  on_schema { schema_name = local.admin_schema }
+}
+
+# ADMIN tables
+resource "snowflake_grant_privileges_to_account_role" "dbt_admin_tables" {
+  account_role_name = var.dbt_role_name
+  privileges        = ["SELECT", "INSERT"]
+  on_schema_object {
+    all {
+      object_type_plural = "TABLES"
+      in_schema          = local.admin_schema
+    }
+  }
+}
+
+# STAGING / MARTS schemas: dbt owns table creation here
+resource "snowflake_grant_privileges_to_account_role" "dbt_build_schemas" {
+  for_each          = toset([local.staging_schema, local.marts_schema])
+  account_role_name = var.dbt_role_name
+  privileges        = ["USAGE", "CREATE TABLE"]
+  on_schema { schema_name = each.value }
+}
+
+# STAGING / MARTS tables
+resource "snowflake_grant_privileges_to_account_role" "dbt_build_tables" {
+  for_each          = toset([local.staging_schema, local.marts_schema])
+  account_role_name = var.dbt_role_name
+  privileges        = ["ALL"]
+  on_schema_object {
+    all {
+      object_type_plural = "TABLES"
+      in_schema          = each.value
+    }
+  }
+}
+
+# PRESENTATION schema: dbt owns view creation here
+resource "snowflake_grant_privileges_to_account_role" "dbt_presentation_schema" {
+  account_role_name = var.dbt_role_name
+  privileges        = ["USAGE", "CREATE VIEW"]
+  on_schema { schema_name = local.presentation_schema }
+}
+
+# PRESENTATION views
+resource "snowflake_grant_privileges_to_account_role" "dbt_presentation_views" {
+  account_role_name = var.dbt_role_name
+  privileges        = ["ALL"]
+  on_schema_object {
+    all {
+      object_type_plural = "VIEWS"
+      in_schema          = local.presentation_schema
+    }
+  }
+}
+
+#################################################################
 # Grant roles to users
 #################################################################
 
@@ -237,3 +369,4 @@ resource "snowflake_grant_account_role" "member" {
   role_name = each.value.role
   user_name = each.value.user
 }
+

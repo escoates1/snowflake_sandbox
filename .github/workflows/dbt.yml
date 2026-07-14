@@ -31,8 +31,8 @@ jobs:
     env:
       SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT_IDENTIFIER }}
       SNOWFLAKE_USER: ${{ secrets.DBT_SERVICE_ACCOUNT }}
+      SNOWFLAKE_ROLE: DBT_TRANSFORMATIONS
       SNOWFLAKE_PRIVATE_KEY_PATH: /tmp/rsa_key.p8
-      SNOWFLAKE_WAREHOUSE: COMPUTE_WH
       DBT_TARGET: dev
     steps:
       - uses: actions/checkout@v4
@@ -63,8 +63,8 @@ jobs:
     env:
       SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT_IDENTIFIER }}
       SNOWFLAKE_USER: ${{ secrets.DBT_SERVICE_ACCOUNT }}
+      SNOWFLAKE_ROLE: DBT_TRANSFORMATIONS
       SNOWFLAKE_PRIVATE_KEY_PATH: /tmp/rsa_key.p8
-      SNOWFLAKE_WAREHOUSE: COMPUTE_WH
       DBT_TARGET: test
     steps:
       - uses: actions/checkout@v4
@@ -95,8 +95,8 @@ jobs:
     env:
       SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT_IDENTIFIER }}
       SNOWFLAKE_USER: ${{ secrets.DBT_SERVICE_ACCOUNT }}
+      SNOWFLAKE_ROLE: DBT_TRANSFORMATIONS
       SNOWFLAKE_PRIVATE_KEY_PATH: /tmp/rsa_key.p8
-      SNOWFLAKE_WAREHOUSE: COMPUTE_WH
       DBT_TARGET: prod
     steps:
       - uses: actions/checkout@v4

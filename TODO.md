@@ -10,7 +10,7 @@
 ## Data Model
 
 - [x] Design conceptual, logical, physical data model for earthquakes
-- [ ] Documentation
+- [x] Documentation
 
 ## Ingestion
 
@@ -27,6 +27,6 @@
 - [x] Create views in presentation layer
 - [x] CI/CD across envs
 - [x] Create a run-operation macro to execute the ingestion_metadata_ddl scripts per dbt run
-- [ ] Create a new service account for running the dbt jobs with. Engineer is fine as a placeholder for now.
+- [x] Create a new service account for running the dbt jobs with. Engineer is fine as a placeholder for now.
 - [x] Handle null foreign keys
 - [x] Remove US state code seed as unused

@@ -8,6 +8,11 @@ variable "analyst_role_name" {
   description = "Name of the ANALYST role to grant privileges to."
 }
 
+variable "dbt_role_name" {
+  type        = string
+  description = "Name of the DBT_TRANSFORMATIONS role to grant privileges to."
+}
+
 variable "database_name" {
   type        = string
   description = "Database the roles operate on (e.g. DWH_DEV)."
