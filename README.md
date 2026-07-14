@@ -1,15 +1,35 @@
 # snowflake_sandbox
 
-A personal learning sandbox for Terraform, dbt, CI/CD and Snowflake.
-
-The guiding rule: **all Snowflake objects are created via code, never via Snowsight.**
+A practice project for Terraform, dbt, data modelling, CI/CD and Snowflake.
 
 - **Terraform** provisions account-level objects — databases, schemas, roles, and warehouses.
-- **dbt** builds the models (staging/marts) on top of those objects.
-- The single permitted Snowsight action is the one-time registration of an RSA public key for key-pair auth (an account operation Terraform can't bootstrap for itself).
-- For Snowflake objects not yet managed by Terraform (tables, seed DML, network rules, external access integrations, and Python stored procedures), SQL/Python scripts are maintained in the `scripts/` directory, grouped by object type (`ddl/`, `dml/`, `network/`, `procs/`).
+- **dbt** builds the models (staging/marts/presentation) on top of those objects.
+- The single permitted Snowsight actions are the one-time registration of an RSA public key for key-pair auth and for the creation of service accounts (for Terraform and dbt runs).
+- For Snowflake objects not yet managed by Terraform (tables, seed DML, network rules, external access integrations, and Python stored procedures), SQL/Python scripts are maintained in the `scripts/` directory, grouped by object type (`ddl/`, `dml/`, `network/`, `procs/`). 
 
 ---
+
+## Overview
+
+This project extracts, loads and transforms USGS Earthquake data into a conformed dimensional model with presentation views built on top.
+The data source provides a public REST API which was used to extract JSON data regarding global earthquakes. Filters were applied to only
+return results since the start of 2026 which a magnitude of at least 5 on the Richter scale - this decision was made to limit the amount
+of data being processed to avoid using unnecessary credits on a trial Snowflake account.
+
+A Snowpark-based stored proc is used to ingest the data from the API into landing tables in the RAW schema. As this project is only intended
+to be run on an ad-hoc basis, not on a fixed schedule, no specific orchestration tool has been included to initiate end-to-run runs. Instead,
+the ingestion process is kicked off by a dbt on-run-start hook which calls the stored proc at the beginning of each dbt build command.
+
+API documentation: https://earthquake.usgs.gov/fdsnws/event/1/
+
+## High Level Architecture
+
+The project follows a straightforward bronze -> silver -> gold -> platinum architecture, where platinum is defined as the presentation layer housing only views. The views have a 1:1 mapping to the modelled tables in the marts schema.
+
+3 environments are configured: dev, test and prod. Any changes to either dbt or Terraform modules are deployed up these environments using CI/CD workflows made possible by GitHub actions.
+
+![Architecture](docs/architecture.png)
+
 
 ## Project structure
 
@@ -35,8 +55,7 @@ The guiding rule: **all Snowflake objects are created via code, never via Snowsi
 │   ├── seeds/                  # magnitude_types.csv lookup
 │   └── models/
 │       ├── staging/            # source defs + staging models over the RAW USGS landing table
-│       ├── marts/              # star schema: dim_date, dim_event_classification, dim_location,
-│       │                       #   dim_alert_status, fact_seismic_event
+│       ├── marts/              # star schema: 4 dimensions and one fact table
 │       └── presentation/       # 1:1 views over each mart, exposed to the ANALYST role
 ├── scripts/                    # SQL/Python for objects not yet managed by Terraform
 │   ├── ddl/                    #   table definitions (ingestion metadata, USGS landing + staging)
@@ -66,15 +85,27 @@ the repo.
 
 ---
 
-## Custom Roles
+## Roles and Users
+
+### Custom Roles
 
 For simplicity in a sandbox environment, the below roles have access across all database environments. In a real-world scenario, there might be a separate role generated per environment to give finer grained permissions.
 
 - ENGINEER - read/write across across all schemas.
 - ANALYST - read access only in the `PRESENTATION` schema.
+- DBT_TRANSFORMATIONS - usage on all schemas, varying privileges depending on schema. 
 
 The roles themselves are created once in the **`account`** environment; each of `dev`/`test`
 then grants those roles privileges on its own database and assigns them to users.
+
+### Users
+
+Two new Snowflake users have been created to allow automated jobs to run remotely:
+
+- TERRAFORM_USER - used to create/destroy Terraform resources.
+- DBT_USER - used to execute dbt commands (e.g. dbt build in CI/CD jobs).
+
+Both users have been configured with RSA public keys to facilitate key-pair authentication.
 
 ---
 
@@ -113,12 +144,12 @@ dbt builds a star schema on top of the USGS earthquake data that lands in `RAW`.
   - `dim_event_classification` — event type, magnitude method, and a qualitative magnitude band
     (Moderate … Extreme).
   - `dim_location` — region/country extracted from the free-text place via `AI_EXTRACT`,
-    hemispheres from latitude/longitude, and a manual SCD Type 2 effective/expiry pattern.
+    hemispheres from latitude/longitude, and an SCD Type 1 effective/expiry pattern.
   - `dim_alert_status` — PAGER alert level/rank, human-review flag, tsunami flag, and
-    felt-report flag, also SCD Type 2.
+    felt-report flag, also SCD Type 1.
   - `fact_seismic_event` — one row per `EVENT_ID`, with foreign keys to all four dimensions
     (hashed from the same attributes each dimension is keyed on) plus event-level metrics
-    (magnitude, depth, felt/CDI/MMI, station counts, etc.); a manual SCD Type 1 pattern mirrors
+    (magnitude, depth, felt/CDI/MMI, station counts, etc.); an SCD Type 1 pattern mirrors
     the dimensions' effective/expiry columns.
   - All surrogate/foreign keys use `dbt_utils.generate_surrogate_key`.
 - **Presentation** (`models/presentation/`) — a 1:1 view over every mart (e.g.
@@ -252,6 +283,10 @@ itself. Load it with `uv run --env-file` so the variables are present in dbt's p
 uv run --env-file .env dbt debug --project-dir dbt --profiles-dir dbt
 uv run --env-file .env dbt build --project-dir dbt --profiles-dir dbt
 ```
+
+Alternatively, set environment variables in your terminal - these can be reused across different sessions
+so keep your commands more concise. You can also `cd` into the dbt directory to call dbt commands
+directly from there.
 
 `dbt debug` confirms the profile resolved and the connection works before you build anything.
 Select the environment with `DBT_TARGET` (`dev` | `test` | `prod`) in `.env`, or override per

@@ -1,7 +1,8 @@
 USE ROLE ENGINEER;
 
 -- Stored procedure to ingest USGS earthquake data, generated for DEV/TEST/PROD
--- Co-authored with CoCo
+-- Staging data in a landing table (USGS_EARTHQUAKES_FDSNWS_LANDING) before inserting into the main table (USGS_EARTHQUAKES_FDSNWS)
+-- Logs audit records into the INGESTION_METADATA table in the ADMIN schema of the specified database
 
 -- ============================================================
 -- DWH_DEV

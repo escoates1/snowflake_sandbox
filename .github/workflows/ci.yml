@@ -21,3 +21,31 @@ jobs:
 
       - name: Ruff format check
         run: uv run ruff format --check .
+
+  dbt-build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dbt
+    env:
+      SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT_IDENTIFIER }}
+      SNOWFLAKE_USER: ${{ secrets.DBT_SERVICE_ACCOUNT }}
+      SNOWFLAKE_ROLE: DBT_TRANSFORMATIONS
+      SNOWFLAKE_PRIVATE_KEY_PATH: /tmp/rsa_key.p8
+      DBT_TARGET: dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync
+
+      - name: Write private key
+        run: echo "${{ secrets.DBT_USER_PRIVATE_KEY }}" | base64 -d > /tmp/rsa_key.p8
+
+      - run: uv run dbt deps --profiles-dir .
+
+      - name: dbt build (DEV, fail fast)
+        run: uv run dbt build --profiles-dir . --fail-fast

@@ -49,11 +49,18 @@ variable "analyst_role_name" {
   default     = "ANALYST"
 }
 
+variable "dbt_role_name" {
+  type        = string
+  description = "Account role the dbt CI/CD job connects as."
+  default     = "DBT_TRANSFORMATIONS"
+}
+
 variable "role_members" {
   description = "Account role name -> list of users that should hold it."
   type        = map(list(string))
   default = {
-    ENGINEER = ["ESCOATES1"]
-    ANALYST  = ["ESCOATES1"]
+    ENGINEER            = ["ESCOATES1"]
+    ANALYST             = ["ESCOATES1"]
+    DBT_TRANSFORMATIONS = ["DBT_USER"]
   }
 }

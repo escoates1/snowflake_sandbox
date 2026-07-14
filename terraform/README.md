@@ -16,7 +16,7 @@ terraform/
 ├── modules/                     # reusable building blocks (no backend, no provider config)
 │   ├── database/                #   snowflake_database + its schemas
 │   ├── warehouse/               #   snowflake_warehouse
-│   ├── role/                    #   account-level custom roles (ENGINEER, ANALYST)
+│   ├── role/                    #   account-level custom roles (ENGINEER, ANALYST, DBT_TRANSFORMATIONS)
 │   └── grants/                  #   privilege grants + role-to-user memberships
 └── environments/                # one root module + one HCP workspace each
     ├── account/                 #   custom roles (account-wide)      → apply FIRST
@@ -31,8 +31,18 @@ terraform/
 | --- | --- | --- |
 | `database` | A database and its `RAW`, `STAGING`, `MARTS`, `PRESENTATION` schemas | `name`, `schemas` |
 | `warehouse` | A single warehouse (auto-suspend, initially suspended) | `name`, `warehouse_size`, `auto_suspend` |
-| `role` | The `ENGINEER` and `ANALYST` account roles | *(none — names are fixed)* |
-| `grants` | Privilege grants to the roles on a database + role-to-user membership | `engineer_role_name`, `analyst_role_name`, `database_name`, `warehouse_name`, `role_members` |
+| `role` | The `ENGINEER`, `ANALYST`, and `DBT_TRANSFORMATIONS` account roles | *(none — names are fixed)* |
+| `grants` | Privilege grants to the roles on a database + role-to-user membership | `engineer_role_name`, `analyst_role_name`, `dbt_role_name`, `database_name`, `warehouse_name`, `role_members` |
+
+### Custom roles
+
+| Role | Scope | Granted to |
+| --- | --- | --- |
+| `ENGINEER` | `ALL` on tables/views across every schema (`RAW`, `STAGING`, `MARTS`, `PRESENTATION`, `ADMIN`) | Personal login (`role_members`) |
+| `ANALYST` | `SELECT` only, scoped to `PRESENTATION` | Personal login (`role_members`) |
+| `DBT_TRANSFORMATIONS` | Least-privilege role the dbt CI/CD jobs connect as: `SELECT`/`INSERT`/`TRUNCATE` on `RAW` tables + `USAGE` on the ingestion proc, `SELECT`/`INSERT` on `ADMIN.INGESTION_METADATA`, and `CREATE TABLE`/`ALL` on `STAGING`/`MARTS`, `CREATE VIEW`/`ALL` on `PRESENTATION` | `DBT_USER` service account (`role_members`) |
+
+All three are created once in `role` (the `account` environment) and granted privileges per-database in `grants` (`dev`/`test`/`prod`). Objects `DBT_TRANSFORMATIONS` creates are automatically visible to `ENGINEER` (all schemas) and `ANALYST` (`PRESENTATION` only) via the existing future grants — no extra step needed after a dbt run.
 
 ### Environments
 
@@ -40,7 +50,7 @@ Each environment is an independent **root module** with its own HCP workspace an
 
 | Environment | Workspace | Provisions | Provider role(s) |
 | --- | --- | --- | --- |
-| `account` | `snowflake-sandbox-account` | Custom roles (`ENGINEER`, `ANALYST`) | `SECURITYADMIN` |
+| `account` | `snowflake-sandbox-account` | Custom roles (`ENGINEER`, `ANALYST`, `DBT_TRANSFORMATIONS`) | `SECURITYADMIN` |
 | `dev` | `snowflake-sandbox-dev` | `DWH_DEV`, `WH_DEV`, grants, memberships | `SYSADMIN` + `SECURITYADMIN` |
 | `test` | `snowflake-sandbox-test` | `DWH_TEST`, `WH_TEST`, grants, memberships | `SYSADMIN` + `SECURITYADMIN` |
 | `prod` | `snowflake-sandbox-prod` | `DWH_PROD`, `WH_PROD`, grants, memberships | `SYSADMIN` + `SECURITYADMIN` |
@@ -59,7 +69,7 @@ environments (which grant them privileges and assign users). Because these are s
 Terraform cannot infer the dependency — you must apply in order:
 
 ```text
-1. account   →  creates ENGINEER / ANALYST
+1. account   →  creates ENGINEER / ANALYST / DBT_TRANSFORMATIONS
 2. dev       →  grants those roles on DWH_DEV,  assigns members
 3. test      →  grants those roles on DWH_TEST, assigns members
 4. prod      →  grants those roles on DWH_PROD, assigns members
@@ -78,6 +88,9 @@ assigned / does not exist."* The CI/CD workflow enforces this order automaticall
 - `TERRAFORM_USER` service account created in Snowflake with key-pair auth and the `SYSADMIN`
   and `SECURITYADMIN` roles — see the repository root `README.md`, step 4.
 - The private key file (`rsa_key.p8`) on disk, outside the repo.
+- `DBT_USER` service account created in Snowflake (`scripts/users/create_users.sql`) *before*
+  applying `dev`/`test`/`prod` — `role_members` grants `DBT_TRANSFORMATIONS` to `DBT_USER` by
+  name, and `snowflake_grant_account_role` fails if the user doesn't exist yet.
 
 ### 2. Create an HCP Terraform organization
 
