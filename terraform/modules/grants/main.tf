@@ -357,6 +357,60 @@ resource "snowflake_grant_privileges_to_account_role" "dbt_presentation_views" {
   }
 }
 
+# One-time + ongoing ownership transfer so that DBT_TRANSFORMATIONS always has ownership
+resource "snowflake_grant_ownership" "dbt_build_tables_ownership" {
+  for_each = toset([local.staging_schema, local.marts_schema])
+
+  account_role_name   = var.dbt_role_name
+  outbound_privileges = "COPY"
+
+  on {
+    all {
+      object_type_plural = "TABLES"
+      in_schema          = each.value
+    }
+  }
+}
+
+resource "snowflake_grant_ownership" "dbt_build_tables_ownership_future" {
+  for_each = toset([local.staging_schema, local.marts_schema])
+
+  account_role_name   = var.dbt_role_name
+  outbound_privileges = "COPY"
+
+  on {
+    future {
+      object_type_plural = "TABLES"
+      in_schema          = each.value
+    }
+  }
+}
+
+# Same story for the PRESENTATION views
+resource "snowflake_grant_ownership" "dbt_presentation_views_ownership" {
+  account_role_name   = var.dbt_role_name
+  outbound_privileges = "COPY"
+
+  on {
+    all {
+      object_type_plural = "VIEWS"
+      in_schema          = local.presentation_schema
+    }
+  }
+}
+
+resource "snowflake_grant_ownership" "dbt_presentation_views_ownership_future" {
+  account_role_name   = var.dbt_role_name
+  outbound_privileges = "COPY"
+
+  on {
+    future {
+      object_type_plural = "VIEWS"
+      in_schema          = local.presentation_schema
+    }
+  }
+}
+
 #################################################################
 # Grant roles to users
 #################################################################
