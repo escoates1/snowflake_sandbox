@@ -275,14 +275,25 @@ resource "snowflake_grant_privileges_to_account_role" "dbt_raw_tables" {
   }
 }
 
-# RAW stored procedures
+# RAW stored procedures - both current and future
 resource "snowflake_grant_privileges_to_account_role" "dbt_raw_procedures" {
+  for_each          = toset(["all", "future"])
   account_role_name = var.dbt_role_name
   privileges        = ["USAGE"]
   on_schema_object {
-    all {
-      object_type_plural = "PROCEDURES"
-      in_schema          = local.raw_schema
+    dynamic "all" {
+      for_each = each.key == "all" ? [1] : []
+      content {
+        object_type_plural = "PROCEDURES"
+        in_schema          = local.raw_schema
+      }
+    }
+    dynamic "future" {
+      for_each = each.key == "future" ? [1] : []
+      content {
+        object_type_plural = "PROCEDURES"
+        in_schema          = local.raw_schema
+      }
     }
   }
 }
