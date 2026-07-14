@@ -8,7 +8,7 @@ snowflake_sandbox:
       account: "{{ env_var('SNOWFLAKE_ACCOUNT', '') }}"
       user: "{{ env_var('SNOWFLAKE_USER', '') }}"
       private_key_path: "{{ env_var('SNOWFLAKE_PRIVATE_KEY_PATH', '') }}"
-      role: "{{ env_var('SNOWFLAKE_ROLE', 'ENGINEER') }}"
+      role: "{{ env_var('DBT_ROLE', 'DBT_TRANSFORMATIONS') }}"
       database: DWH_DEV
       warehouse: WH_DEV
       schema: staging
@@ -18,7 +18,7 @@ snowflake_sandbox:
       account: "{{ env_var('SNOWFLAKE_ACCOUNT', '') }}"
       user: "{{ env_var('SNOWFLAKE_USER', '') }}"
       private_key_path: "{{ env_var('SNOWFLAKE_PRIVATE_KEY_PATH', '') }}"
-      role: "{{ env_var('SNOWFLAKE_ROLE', 'ENGINEER') }}"
+      role: "{{ env_var('DBT_ROLE', 'DBT_TRANSFORMATIONS') }}"
       database: DWH_TEST
       warehouse: WH_TEST
       schema: staging
@@ -28,7 +28,7 @@ snowflake_sandbox:
       account: "{{ env_var('SNOWFLAKE_ACCOUNT', '') }}"
       user: "{{ env_var('SNOWFLAKE_USER', '') }}"
       private_key_path: "{{ env_var('SNOWFLAKE_PRIVATE_KEY_PATH', '') }}"
-      role: "{{ env_var('SNOWFLAKE_ROLE', 'ENGINEER') }}"
+      role: "{{ env_var('DBT_ROLE', 'DBT_TRANSFORMATIONS') }}"
       database: DWH_PROD
       warehouse: WH_PROD
       schema: staging
