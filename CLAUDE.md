@@ -23,7 +23,7 @@ Keep the CLAUDE.md file up to date as the project evolves. Add all architectural
 
 - One Snowflake account, per-environment databases (`DWH_DEV`, `DWH_TEST`, `DWH_PROD`) with matching schemas (`RAW`, `STAGING`, `MARTS`, `PRESENTATION`, `ADMIN`).
 - **Terraform provisions all account objects** (databases, schemas, roles, warehouses); dbt builds models on top. SQL/Python for objects Terraform doesn't yet manage (tables, seed DML, network rules, external access integrations, stored procedures) lives in `scripts/`, grouped by object type.
-- **dbt models are layered**: sources (`_src_earthquake.yml` over `RAW.USGS_EARTHQUAKES_FDSNWS`) → **staging** (`stg_earthquake__event_classification`, `stg_earthquake__location` — light select/rename) → **marts** analysis dimensions (`dim_date`, `dim_event_classification`, `dim_location`). Static lookups live in seeds (`magnitude_types`); `dbt_utils` supplies `date_spine` and `generate_surrogate_key`; `dim_location` derives region/country from free-text place via `AI_EXTRACT` and applies a manual SCD Type 2 pattern. A custom `generate_schema_name` macro makes `+schema` use the configured name verbatim, so models land in `STAGING`/`MARTS` (not `<target>_<schema>`).
+- **dbt models are layered**: sources (`_src_earthquake.yml` over `RAW.USGS_EARTHQUAKES_FDSNWS`) → **staging** (`stg_earthquake__event_classification`, `stg_earthquake__location`, `stg_earthquake__alert_status`, `stg_earthquake__seismic_event` — light select/rename, one per downstream dim/fact) → **marts**, a star schema (`dim_date`, `dim_event_classification`, `dim_location`, `dim_alert_status`, `fact_seismic_event`) → **presentation**, a 1:1 view over every mart (e.g. `fact_seismic_event_view`), which is what `ANALYST` is actually granted against. Static lookups live in seeds (`magnitude_types`); `dbt_utils` supplies `date_spine`, `generate_surrogate_key`, and `accepted_range`; `dim_location` derives region/country from free-text place via `AI_EXTRACT`; `dim_location`, `dim_event_classification`, and `dim_alert_status` apply a manual SCD Type 2 pattern, `fact_seismic_event` a matching SCD Type 1 pattern. A custom `generate_schema_name` macro makes `+schema` use the configured name verbatim, so models land in `STAGING`/`MARTS`/`PRESENTATION` (not `<target>_<schema>`). Ingestion is no longer a separate manual step: an `on-run-start` hook macro (`ingest_usgc_earthquakes.sql`) calls the `INGEST_USGS_EARTHQUAKES` stored proc at the start of every `dbt build`. Generic + `dbt_utils` tests live in the `_*.yml` property files; trickier derivations (magnitude-band boundaries, alert-status flags, direction/distance regex parsing) are covered by dbt unit tests. `docs/earthquake_model.drawio` (+ its exported `docs/model/*.png`) and `docs/dbt-dag.png` document the resulting star schema and lineage.
 - Terraform is structured as one directory **per environment** (`terraform/environments/{account,dev,test,prod}`) that calls shared `terraform/modules/*`. The **`account`** environment creates account-wide objects (the custom roles); **`dev`**/**`test`**/**`prod`** each create a database + warehouse and grant the roles. `account` must be applied before the database environments.
 - **State lives in HCP Terraform**, one workspace per environment (org `escoates1-org`; workspaces `snowflake-sandbox-{account,dev,test}`), configured via a `cloud {}` block in each env's `versions.tf`. Workspaces use **Local execution mode** — state is stored/locked remotely, but runs happen on the local machine so the provider can read the local private-key file. (See `terraform/README.md`.)
 - Terraform authenticates as a dedicated **`TERRAFORM_USER`** service account via key-pair (JWT), with roles `SYSADMIN` (objects) and `SECURITYADMIN` (roles/grants) — not the personal login. `providers.tf` declares two providers: the default (`SYSADMIN`) and an aliased `securityadmin`.
@@ -53,15 +53,27 @@ dbt/                         — dbt project
   dbt_project.yml            — model + seed configs (schemas, materializations, column types)
   profiles.yml               — env-var-based, safe to commit
   packages.yml               — dbt_utils
-  macros/                    — generate_schema_name override (+schema used verbatim)
+  macros/                    — generate_schema_name override (+schema used verbatim);
+                                ingest_usgc_earthquakes (on-run-start hook, calls INGEST_USGS_EARTHQUAKES)
   seeds/                     — magnitude_types.csv (magnitude code → description lookup)
   models/
     staging/                 — _src_earthquake.yml source + stg_earthquake__* staging models
-    marts/                   — dim_date, dim_event_classification, dim_location (+ _analysis__models.yml)
+                                (event_classification, location, alert_status, seismic_event)
+    marts/                   — star schema: dim_date, dim_event_classification, dim_location,
+                                dim_alert_status, fact_seismic_event (+ _mart__models.yml)
+    presentation/             — 1:1 views over each mart, e.g. dim_location_view,
+                                fact_seismic_event_view (+ _presentation__models.yml); what ANALYST is
+                                actually granted against
+docs/                        — data model diagrams
+  earthquake_model.drawio    — editable source for the model diagrams
+  dbt-dag.png                — dbt lineage graph (source → staging → marts → presentation)
+  model/                     — conceptual_model.png, logical_model.png, physical_model.png (exported)
 .github/workflows/
-  terraform.yml              — PR: fmt/validate/plan (all envs); merge: gated apply account→dev→test→prod
-  ci.txt                     — (inactive .txt) ruff lint + dbt compile against DEV
-  cd.txt                     — (inactive .txt) dbt run + dbt test against PROD
+  terraform.yml              — PR (terraform/** changed): fmt/validate/plan (all envs); merge: gated
+                                apply account→dev→test→prod
+  ci.yml                     — PR: ruff lint + format check
+  dbt.yml                    — merge only (dbt/** changed, no PR trigger): gated dbt build
+                                dev→test→prod, each tied to a GitHub Environment
 .env.example                 — credential template; copy to .env (gitignored)
 ```
 
@@ -93,7 +105,16 @@ for both.
 
 ## GitHub Actions secrets required
 
-`SNOWFLAKE_ACCOUNT`, `SNOWFLAKE_USER`, `SNOWFLAKE_PRIVATE_KEY` (base64-encoded `rsa_key.p8`)
+`terraform.yml` and `dbt.yml` authenticate as different Snowflake users and read different
+secrets — do not conflate them:
+
+- **`terraform.yml`** (as `TERRAFORM_USER`): `TF_API_TOKEN` (HCP Terraform), `TERRAFORM_PRIVATE_KEY`
+  (base64 `rsa_key.p8`), `SNOWFLAKE_ORG`, `SNOWFLAKE_ACCOUNT_NAME`.
+- **`dbt.yml`** (as the dbt connecting user, `ENGINEER` role): `SNOWFLAKE_ACCOUNT_IDENTIFIER`,
+  `DBT_SERVICE_ACCOUNT`, `DBT_USER_PRIVATE_KEY` (base64 `rsa_key.p8`).
+
+`user`/`role` are intentionally not set as `TF_VAR_*` in `terraform.yml` so `TERRAFORM_USER` is
+never overwritten with the dbt user's credentials — see `terraform/README.md`.
 
 ## Progress
 
@@ -105,8 +126,8 @@ for both.
 - [x] USGS Earthquake ingestion pipeline: landing + staging tables, egress network rules, external access integration, and a Python (Snowpark) stored proc with watermarking
 - [x] dbt `profiles.yml` extended to three targets (`dev`/`test`/`prod`) with a pinned connecting role
 - [x] dbt project scaffold with env-var-based profiles
-- [x] CI workflow: ruff lint + dbt compile against DEV (on PR to main)
-- [x] CD workflow: dbt run + dbt test against PROD (on merge to main)
+- [x] CI workflow (`ci.yml`): ruff lint + format check on PR to main
+- [x] CD workflow (`dbt.yml`): gated `dbt build` (`dev→test→prod`) on merge to main, each stage tied to a GitHub Environment
 - [x] Key-pair auth setup guide in README (PowerShell + bash)
 - [x] Branch protection instructions in README
 - [x] Terraform scaffold: per-environment dirs + shared modules
@@ -117,11 +138,15 @@ for both.
 - [x] `account`, `dev`, `test`, and `prod` environments all provisioned
 - [x] Terraform CI/CD (`terraform.yml`): fmt/validate/plan on PR (all envs, plan posted as PR comment); gated sequential apply (`account→dev→test→prod`) on merge
 - [x] dbt sources over the RAW USGS landing table with a freshness check (`_src_earthquake.yml`)
-- [x] Staging models: `stg_earthquake__event_classification`, `stg_earthquake__location`
-- [x] Analysis marts: `dim_date` (dbt_utils `date_spine`), `dim_event_classification`, `dim_location` (`AI_EXTRACT` region/country + manual SCD Type 2 + `generate_surrogate_key`)
-- [x] `magnitude_types` seed + `dbt_project.yml` seed config
+- [x] Staging models: `stg_earthquake__event_classification`, `stg_earthquake__location`, `stg_earthquake__alert_status`, `stg_earthquake__seismic_event`
+- [x] Star schema marts: `dim_date` (dbt_utils `date_spine`), `dim_event_classification`, `dim_location` (`AI_EXTRACT` region/country + manual SCD Type 2), `dim_alert_status` (PAGER alert rank/flags + manual SCD Type 2), `fact_seismic_event` (FKs to all four dims + event metrics, manual SCD Type 1), all keyed with `generate_surrogate_key`
+- [x] `magnitude_types` seed + `dbt_project.yml` seed config (column-name mismatch between seed config and CSV headers fixed)
 - [x] `dbt_utils` package added; custom `generate_schema_name` macro
-- [x] Generic tests across models (`not_null`, `unique`, `accepted_values`, `relationships`)
+- [x] Generic + `dbt_utils` tests across models (`not_null`, `unique`, `accepted_values`, `relationships`, `accepted_range`); dbt unit tests for magnitude-band boundaries, alert-status flag derivation, and direction/distance regex parsing
+- [x] Presentation layer: 1:1 views over every mart (`models/presentation/`), the actual grant target for `ANALYST`
+- [x] Ingestion wired into dbt itself via an `on-run-start` hook macro that calls `INGEST_USGS_EARTHQUAKES` at the start of every `dbt build`
+- [x] `dbt.yml` CD workflow gates `dbt build` per environment behind GitHub Environment approvals, using a dedicated `DBT_SERVICE_ACCOUNT`/`DBT_USER_PRIVATE_KEY` secret pair separate from Terraform's
+- [x] Data model diagrams: `docs/earthquake_model.drawio` + exported conceptual/logical/physical PNGs (`docs/model/`), and a dbt DAG screenshot (`docs/dbt-dag.png`)
 
 ### Next / ideas to explore
 
@@ -130,8 +155,7 @@ for both.
 - [ ] Add a `snowflake_resource_monitor` to cap trial-account credit usage
 - [ ] Establish role hierarchy: grant custom roles up to `SYSADMIN`
 - [ ] Add `terraform test` coverage for the `grants` module (membership flattening)
-- [ ] Replace the manual SCD Type 2 in `dim_location` with dbt snapshots
-- [ ] Wire `dbt build` + `dbt test` into the CI workflow now that models exist
-- [ ] Build a fact model joining staging events to `dim_date`/`dim_location`/`dim_event_classification`
-- [ ] Fix the `magnitude_types` seed column-config names (`dbt_project.yml` pins `MAGNITUDE_TYPE_CODE`/`MAGNITUDE_TYPE_DESC`, but the CSV headers are `magnitude_code`/`magnitude_description`)
+- [ ] Replace the manual SCD Type 2 pattern in `dim_location`/`dim_event_classification`/`dim_alert_status` (and the matching SCD Type 1 in `fact_seismic_event`) with dbt snapshots
+- [ ] Add a PR-time dbt build/compile check — `ci.yml` only runs ruff; `dbt.yml` has no `pull_request` trigger, so dbt models are first validated after merge (gated by environment approval, but only against DEV first)
+- [ ] Provision `DBT_SERVICE_ACCOUNT` as a proper Terraform-managed service user (currently a placeholder secret, per `TODO.md`) rather than a manually created one
 - [ ] Explore Snowflake features: dynamic tables, streams, tasks
