@@ -6,6 +6,7 @@
 - [x] Roles
 - [x] Role grants
 - [x] Production config
+- [ ] Update Terraform/README.md
 
 ## Data Model
 

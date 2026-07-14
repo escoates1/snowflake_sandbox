@@ -146,7 +146,7 @@ dbt builds a star schema on top of the USGS earthquake data that lands in `RAW`.
   - `dim_location` — region/country extracted from the free-text place via `AI_EXTRACT`,
     hemispheres from latitude/longitude, and an SCD Type 1 effective/expiry pattern.
   - `dim_alert_status` — PAGER alert level/rank, human-review flag, tsunami flag, and
-    felt-report flag, also SCD Type 2.
+    felt-report flag, also SCD Type 1.
   - `fact_seismic_event` — one row per `EVENT_ID`, with foreign keys to all four dimensions
     (hashed from the same attributes each dimension is keyed on) plus event-level metrics
     (magnitude, depth, felt/CDI/MMI, station counts, etc.); an SCD Type 1 pattern mirrors
