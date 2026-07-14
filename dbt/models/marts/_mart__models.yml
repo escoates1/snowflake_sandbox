@@ -129,7 +129,7 @@ models:
     description: >
       Location dimension for USGS earthquake events. Region and country are
       derived from the free-text place via AI_EXTRACT; hemispheres are derived
-      from latitude/longitude. SCD Type 2 grain: one current row per location.
+      from latitude/longitude. SCD Type 1 grain: one current row per location.
       Built on stg_earthquake__location.
     config:
       materialized: table
